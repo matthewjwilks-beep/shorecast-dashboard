@@ -20,13 +20,22 @@
         const API_BASE = 'https://shorecast.onrender.com';
         const DEFAULT_BEACHES = ['rhossili', 'barry-island', 'tenby-south'];
         
-        const TIME_SLOTS = [
-            { id: 'now', label: 'right now' },
-            { id: 'tonight', label: 'tonight' },
-            { id: 'tomorrow-am', label: 'tomorrow am' },
-            { id: 'tomorrow-pm', label: 'tomorrow pm' },
-            { id: 'tuesday', label: 'tuesday' }
-        ];
+        // Generate dynamic time slots based on current day
+        function getTimeSlots() {
+            const now = new Date();
+            const dayAfter = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
+            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+            
+            return [
+                { id: 'now', label: 'right now' },
+                { id: 'tonight', label: now.getHours() >= 20 ? 'tomorrow evening' : 'tonight' },
+                { id: 'tomorrow-am', label: 'tomorrow am' },
+                { id: 'tomorrow-pm', label: 'tomorrow pm' },
+                { id: 'day-after-am', label: days[dayAfter.getDay()] }
+            ];
+        }
+        
+        const TIME_SLOTS = getTimeSlots();
         
         const ARROWS = { 
             north: '↑', south: '↓', east: '→', west: '←', 
