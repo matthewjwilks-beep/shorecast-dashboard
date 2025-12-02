@@ -20,22 +20,13 @@
         const API_BASE = 'https://shorecast.onrender.com';
         const DEFAULT_BEACHES = ['rhossili', 'barry-island', 'tenby-south'];
         
-        // Generate dynamic time slots based on current day
-        function getTimeSlots() {
-            const now = new Date();
-            const dayAfter = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 2);
-            const days = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-            
-            return [
-                { id: 'now', label: 'right now' },
-                { id: 'tonight', label: now.getHours() >= 20 ? 'tomorrow evening' : 'tonight' },
-                { id: 'tomorrow-am', label: 'tomorrow am' },
-                { id: 'tomorrow-pm', label: 'tomorrow pm' },
-                { id: 'day-after-am', label: days[dayAfter.getDay()] }
-            ];
-        }
-        
-        const TIME_SLOTS = getTimeSlots();
+        // Fallback time slots (used before API responds)
+        const FALLBACK_TIME_SLOTS = [
+            { id: 'now', label: 'right now', time: '--:--' },
+            { id: 'tomorrow-am', label: 'tomorrow am', time: '08:00' },
+            { id: 'tomorrow-pm', label: 'tomorrow pm', time: '17:00' },
+            { id: 'day-after-am', label: 'loading...', time: '08:00' }
+        ];
         
         const ARROWS = { 
             north: '↑', south: '↓', east: '→', west: '←', 
@@ -48,7 +39,8 @@
             data: null,
             loading: true,
             error: null,
-            showInfo: null
+            showInfo: null,
+            timeSlots: FALLBACK_TIME_SLOTS
         };
 
         function setState(newState) {
@@ -68,7 +60,11 @@
                 }
                 
                 const data = await res.json();
-                setState({ data, loading: false });
+                
+                // Update time slots from API response if available
+                const newTimeSlots = data.meta?.availableTimeSlots || state.timeSlots;
+                
+                setState({ data, loading: false, timeSlots: newTimeSlots });
             } catch (err) {
                 console.error('API failed:', err.message);
                 setState({ error: err.message, loading: false });
@@ -102,6 +98,20 @@
                 red: { badge: 'bg-red-400', border: 'border-l-red-400', bg: 'from-red-50 to-rose-50' }
             };
             return colors[status] || { badge: 'bg-gray-400', border: 'border-l-gray-400', bg: 'from-gray-50 to-gray-100' };
+        }
+
+        function renderTimeSlots() {
+            return state.timeSlots.map(s => `
+                <button onclick="setState({ time: '${s.id}' }); fetchData();" 
+                    class="flex-shrink-0 min-w-[100px] px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                        state.time === s.id 
+                            ? 'bg-gray-900 text-white shadow-lg' 
+                            : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
+                    }">
+                    <span class="block">${s.label}</span>
+                    <span class="block text-xs opacity-70 mt-0.5">${s.time}</span>
+                </button>
+            `).join('');
         }
 
         function renderBeachCard(beach) {
@@ -305,14 +315,7 @@
                 </header>
 
                 <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-                    ${TIME_SLOTS.map(s => `
-                        <button onclick="setState({ time: '${s.id}' }); fetchData();" 
-                            class="flex-shrink-0 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
-                                state.time === s.id ? 'bg-gray-900 text-white shadow-lg' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
-                            }">
-                            ${s.label}
-                        </button>
-                    `).join('')}
+                    ${renderTimeSlots()}
                 </div>
 
                 <div class="flex gap-3 mb-8">
