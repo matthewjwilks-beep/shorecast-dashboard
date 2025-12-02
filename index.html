@@ -179,6 +179,12 @@
                             `}
                         </div>
 
+                        ${beach.isForecast ? `
+                            <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
+                                forecast
+                            </span>
+                        ` : ''}
+
                         ${rec.bestWindow ? `
                             <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
                                 best window: ${rec.bestWindow.start} – ${rec.bestWindow.end}
@@ -341,6 +347,10 @@
 
                     <footer class="text-center text-gray-400 text-xs mt-8 pt-6 border-t border-gray-200">
                         free tier: 3 beaches · upgrade for unlimited
+                        <br>
+                        <a href="https://ko-fi.com/shorecast" target="_blank" rel="noopener noreferrer" class="text-indigo-500 hover:text-indigo-600 mt-2 inline-block transition-colors">
+                            ☕ buy us a coffee
+                        </a>
                     </footer>
                 ` : ''}
 
