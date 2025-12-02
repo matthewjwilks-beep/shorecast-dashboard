@@ -165,8 +165,17 @@
                                     <div class="text-xs text-gray-500 mt-1">waves</div>
                                 </div>
                                 <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.tide?.time || '—'}</div>
-                                    <div class="text-xs text-gray-500 mt-1">${beach.tide?.type || 'tide'}</div>
+                                    <div class="flex justify-center gap-3">
+                                        <div>
+                                            <div class="text-lg font-medium text-gray-900">${beach.tide?.high || '—'}</div>
+                                            <div class="text-xs text-gray-500">high</div>
+                                        </div>
+                                        <div class="text-gray-300">|</div>
+                                        <div>
+                                            <div class="text-lg font-medium text-gray-900">${beach.tide?.low || '—'}</div>
+                                            <div class="text-xs text-gray-500">low</div>
+                                        </div>
+                                    </div>
                                 </div>
                                 <div class="text-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="setState({ showInfo: '${beach.slug}' })">
                                     <div class="text-xl font-medium text-gray-900">${beach.sewage?.icon || '?'}</div>
