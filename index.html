@@ -154,57 +154,55 @@
                     </div>
 
                     <div class="p-5">
-                        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
-                            ${state.mode === 'swimming' ? `
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.seaTempDisplay}</div>
-                                    <div class="text-xs text-gray-500 mt-1">water</div>
+                        <div class="grid grid-cols-3 md:grid-cols-5 gap-2 mb-4">
+                            <!-- Water temp - both modes -->
+                            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                                <div class="text-xl font-medium text-gray-900">${beach.seaTempDisplay}</div>
+                                <div class="text-xs text-gray-500 mt-1">water</div>
+                            </div>
+                            
+                            <!-- Feels like - both modes -->
+                            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                                <div class="text-xl font-medium text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</div>
+                                <div class="text-xs text-gray-500 mt-1">feels like</div>
+                            </div>
+                            
+                            <!-- Tides - both modes -->
+                            <div class="text-center p-3 bg-gray-50 rounded-xl">
+                                <div class="flex justify-center gap-2">
+                                    <div>
+                                        <div class="text-base font-medium text-gray-900">${beach.tide?.high || '—'}</div>
+                                        <div class="text-xs text-gray-500">high</div>
+                                    </div>
+                                    <div class="text-gray-300">|</div>
+                                    <div>
+                                        <div class="text-base font-medium text-gray-900">${beach.tide?.low || '—'}</div>
+                                        <div class="text-xs text-gray-500">low</div>
+                                    </div>
                                 </div>
+                            </div>
+                            
+                            <!-- Mode-specific stat -->
+                            ${state.mode === 'swimming' ? `
                                 <div class="text-center p-3 bg-gray-50 rounded-xl">
                                     <div class="text-xl font-medium text-gray-900">${beach.waves?.heightDisplay || '—'}</div>
                                     <div class="text-xs text-gray-500 mt-1">waves</div>
                                 </div>
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="flex justify-center gap-3">
-                                        <div>
-                                            <div class="text-lg font-medium text-gray-900">${beach.tide?.high || '—'}</div>
-                                            <div class="text-xs text-gray-500">high</div>
-                                        </div>
-                                        <div class="text-gray-300">|</div>
-                                        <div>
-                                            <div class="text-lg font-medium text-gray-900">${beach.tide?.low || '—'}</div>
-                                            <div class="text-xs text-gray-500">low</div>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div class="text-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="setState({ showInfo: '${beach.slug}' })">
-                                    <div class="text-xl font-medium text-gray-900">${beach.sewage?.icon || '?'}</div>
-                                    <div class="text-xs text-gray-500 flex items-center justify-center gap-1 mt-1">
-                                        status
-                                        <span class="w-4 h-4 bg-gray-300 hover:bg-indigo-500 text-white rounded-full text-xs flex items-center justify-center">i</span>
-                                    </div>
-                                </div>
                             ` : `
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.seaTempDisplay}</div>
-                                    <div class="text-xs text-gray-500 mt-1">water</div>
-                                </div>
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</div>
-                                    <div class="text-xs text-gray-500 mt-1">feels like</div>
-                                </div>
                                 <div class="text-center p-3 bg-gray-50 rounded-xl">
                                     <div class="text-xl font-medium text-gray-900">${beach.weather?.airTempDisplay || '—'}</div>
                                     <div class="text-xs text-gray-500 mt-1">air</div>
                                 </div>
-                                <div class="text-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="setState({ showInfo: '${beach.slug}' })">
-                                    <div class="text-xl font-medium text-gray-900">${beach.sewage?.icon || '?'}</div>
-                                    <div class="text-xs text-gray-500 flex items-center justify-center gap-1 mt-1">
-                                        status
-                                        <span class="w-4 h-4 bg-gray-300 hover:bg-indigo-500 text-white rounded-full text-xs flex items-center justify-center">i</span>
-                                    </div>
-                                </div>
                             `}
+                            
+                            <!-- Status - both modes -->
+                            <div class="text-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="setState({ showInfo: '${beach.slug}' })">
+                                <div class="text-xl font-medium text-gray-900">${beach.sewage?.icon || '?'}</div>
+                                <div class="text-xs text-gray-500 flex items-center justify-center gap-1 mt-1">
+                                    status
+                                    <span class="w-4 h-4 bg-gray-300 hover:bg-indigo-500 text-white rounded-full text-xs flex items-center justify-center">i</span>
+                                </div>
+                            </div>
                         </div>
 
                         ${beach.isForecast ? `
