@@ -5,22 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Shorecast - Your Beaches</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <style>
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: .5; }
         }
         .animate-pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        .fade-in { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
     </style>
 </head>
-<body class="bg-gray-50">
-    <div id="app" class="max-w-5xl mx-auto px-4 py-8"></div>
+<body class="bg-gray-50 min-h-screen">
+    <div id="app"></div>
 
     <script>
-        const API_BASE = 'https://shorecast.onrender.com';
-        const DEFAULT_BEACHES = ['rhossili', 'barry-island', 'tenby-south'];
+        // ============================================
+        // CONFIGURATION
+        // ============================================
         
-        // Fallback time slots (used before API responds)
+        const API_BASE = 'https://shorecast.onrender.com';
+        
+        // IMPORTANT: Replace these with your actual Supabase project credentials
+        const SUPABASE_URL = 'https://kivqldzfitxldzymxcfu.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpdnFsZHpmaXR4bGR6eW14Y2Z1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NDAzOTcsImV4cCI6MjA4MTAxNjM5N30.TYdgeVZe7mbgeASi8npL82Ewon7b8fjN0jRi1RtZNZk';
+        
+        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        
+        const DEFAULT_BEACHES = ['rhossili', 'barry-island', 'tenby-south'];
+        const MAX_FREE_BEACHES = 3;
+        
         const FALLBACK_TIME_SLOTS = [
             { id: 'now', label: 'right now', time: '--:--' },
             { id: 'tomorrow-am', label: 'tomorrow am', time: '08:00' },
@@ -33,14 +50,35 @@
             northeast: '↗', northwest: '↖', southeast: '↘', southwest: '↙' 
         };
 
+        // ============================================
+        // STATE MANAGEMENT
+        // ============================================
+
         let state = {
+            // Auth state
+            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard
+            user: null,
+            userProfile: null,
+            authError: null,
+            authLoading: false,
+            
+            // Dashboard state
             mode: 'swimming',
             time: 'now',
             data: null,
             loading: true,
             error: null,
             showInfo: null,
-            timeSlots: FALLBACK_TIME_SLOTS
+            timeSlots: FALLBACK_TIME_SLOTS,
+            userBeaches: [],
+            
+            // Onboarding state
+            availableBeaches: [],
+            selectedBeaches: [],
+            beachSearch: '',
+            
+            // Settings
+            showSettings: false
         };
 
         function setState(newState) {
@@ -48,11 +86,237 @@
             render();
         }
 
+        // ============================================
+        // AUTH FUNCTIONS
+        // ============================================
+
+        async function checkAuth() {
+            try {
+                const { data: { session } } = await supabase.auth.getSession();
+                
+                if (session?.user) {
+                    setState({ user: session.user });
+                    await loadUserProfile();
+                } else {
+                    setState({ view: 'login', user: null });
+                }
+            } catch (err) {
+                console.error('Auth check failed:', err);
+                setState({ view: 'login', user: null });
+            }
+        }
+
+        async function signUp(email, password, marketingConsent) {
+            setState({ authLoading: true, authError: null });
+            
+            try {
+                const { data, error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                    options: {
+                        data: {
+                            marketing_consent: marketingConsent,
+                            consent_timestamp: new Date().toISOString()
+                        }
+                    }
+                });
+                
+                if (error) throw error;
+                
+                if (data.user && !data.session) {
+                    // Email confirmation required
+                    setState({ 
+                        authLoading: false, 
+                        authError: null,
+                        view: 'check-email'
+                    });
+                } else if (data.session) {
+                    // Auto-confirmed (development mode)
+                    setState({ user: data.user, authLoading: false });
+                    await loadUserProfile();
+                }
+            } catch (err) {
+                setState({ authError: err.message, authLoading: false });
+            }
+        }
+
+        async function signIn(email, password) {
+            setState({ authLoading: true, authError: null });
+            
+            try {
+                const { data, error } = await supabase.auth.signInWithPassword({
+                    email,
+                    password
+                });
+                
+                if (error) throw error;
+                
+                setState({ user: data.user, authLoading: false });
+                await loadUserProfile();
+            } catch (err) {
+                setState({ authError: err.message, authLoading: false });
+            }
+        }
+
+        async function signInWithProvider(provider) {
+            setState({ authLoading: true, authError: null });
+            
+            try {
+                const { error } = await supabase.auth.signInWithOAuth({
+                    provider,
+                    options: {
+                        redirectTo: window.location.origin
+                    }
+                });
+                
+                if (error) throw error;
+            } catch (err) {
+                setState({ authError: err.message, authLoading: false });
+            }
+        }
+
+        async function resetPassword(email) {
+            setState({ authLoading: true, authError: null });
+            
+            try {
+                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                    redirectTo: `${window.location.origin}?reset=true`
+                });
+                
+                if (error) throw error;
+                
+                setState({ 
+                    authLoading: false, 
+                    view: 'reset-sent'
+                });
+            } catch (err) {
+                setState({ authError: err.message, authLoading: false });
+            }
+        }
+
+        async function signOut() {
+            await supabase.auth.signOut();
+            setState({ 
+                user: null, 
+                userProfile: null, 
+                userBeaches: [],
+                view: 'login',
+                data: null
+            });
+        }
+
+        // ============================================
+        // USER PROFILE & BEACHES
+        // ============================================
+
+        async function loadUserProfile() {
+            if (!state.user) return;
+            
+            try {
+                // Load user profile
+                const { data: profile, error: profileError } = await supabase
+                    .from('profiles')
+                    .select('*')
+                    .eq('id', state.user.id)
+                    .single();
+                
+                if (profileError && profileError.code !== 'PGRST116') {
+                    console.error('Profile load error:', profileError);
+                }
+                
+                // Load user beaches
+                const { data: beaches, error: beachesError } = await supabase
+                    .from('user_beaches')
+                    .select('beach_slug, position')
+                    .eq('user_id', state.user.id)
+                    .order('position');
+                
+                if (beachesError) {
+                    console.error('Beaches load error:', beachesError);
+                }
+                
+                const userBeaches = beaches?.map(b => b.beach_slug) || [];
+                
+                if (userBeaches.length === 0) {
+                    // New user - show onboarding
+                    await loadAvailableBeaches();
+                    setState({ 
+                        userProfile: profile,
+                        userBeaches: [],
+                        selectedBeaches: DEFAULT_BEACHES,
+                        view: 'onboarding'
+                    });
+                } else {
+                    // Existing user - show dashboard
+                    setState({ 
+                        userProfile: profile,
+                        userBeaches: userBeaches,
+                        view: 'dashboard'
+                    });
+                    fetchData();
+                }
+            } catch (err) {
+                console.error('Failed to load user data:', err);
+                setState({ view: 'dashboard', userBeaches: DEFAULT_BEACHES });
+                fetchData();
+            }
+        }
+
+        async function loadAvailableBeaches() {
+            try {
+                const res = await fetch(`${API_BASE}/locations`);
+                const beaches = await res.json();
+                setState({ availableBeaches: beaches });
+            } catch (err) {
+                console.error('Failed to load beaches:', err);
+            }
+        }
+
+        async function saveUserBeaches(beaches) {
+            if (!state.user) return;
+            
+            try {
+                // Delete existing beaches
+                await supabase
+                    .from('user_beaches')
+                    .delete()
+                    .eq('user_id', state.user.id);
+                
+                // Insert new beaches
+                const inserts = beaches.map((slug, index) => ({
+                    user_id: state.user.id,
+                    beach_slug: slug,
+                    position: index
+                }));
+                
+                const { error } = await supabase
+                    .from('user_beaches')
+                    .insert(inserts);
+                
+                if (error) throw error;
+                
+                setState({ 
+                    userBeaches: beaches,
+                    view: 'dashboard'
+                });
+                fetchData();
+            } catch (err) {
+                console.error('Failed to save beaches:', err);
+                alert('Failed to save your beaches. Please try again.');
+            }
+        }
+
+        // ============================================
+        // DASHBOARD DATA
+        // ============================================
+
         async function fetchData() {
             setState({ loading: true, error: null });
             
+            const beaches = state.userBeaches.length > 0 ? state.userBeaches : DEFAULT_BEACHES;
+            
             try {
-                const url = `${API_BASE}/dashboard?beaches=${DEFAULT_BEACHES.join(',')}&mode=${state.mode}&time=${state.time}`;
+                const url = `${API_BASE}/dashboard?beaches=${beaches.join(',')}&mode=${state.mode}&time=${state.time}`;
                 const res = await fetch(url);
                 
                 if (!res.ok) {
@@ -60,8 +324,6 @@
                 }
                 
                 const data = await res.json();
-                
-                // Update time slots from API response if available
                 const newTimeSlots = data.meta?.availableTimeSlots || state.timeSlots;
                 
                 setState({ data, loading: false, timeSlots: newTimeSlots });
@@ -70,6 +332,10 @@
                 setState({ error: err.message, loading: false });
             }
         }
+
+        // ============================================
+        // HELPER FUNCTIONS
+        // ============================================
 
         function getUpdateText() {
             if (!state.data?.meta) return '';
@@ -86,7 +352,11 @@
             const gradients = {
                 'rhossili': 'from-slate-400 to-blue-500',
                 'barry-island': 'from-slate-300 to-slate-500',
-                'tenby-south': 'from-blue-300 to-indigo-400'
+                'tenby-south': 'from-blue-300 to-indigo-400',
+                'langland': 'from-cyan-400 to-blue-500',
+                'caswell': 'from-teal-400 to-cyan-500',
+                'rest-bay': 'from-slate-500 to-indigo-600',
+                'porthcawl': 'from-blue-400 to-purple-500'
             };
             return gradients[slug] || 'from-slate-400 to-slate-500';
         }
@@ -99,6 +369,378 @@
             };
             return colors[status] || { badge: 'bg-gray-400', border: 'border-l-gray-400', bg: 'from-gray-50 to-gray-100' };
         }
+
+        function getFilteredBeaches() {
+            const search = state.beachSearch.toLowerCase();
+            return state.availableBeaches.filter(b => 
+                b.name.toLowerCase().includes(search) || 
+                b.location.toLowerCase().includes(search)
+            );
+        }
+
+        // ============================================
+        // EVENT HANDLERS
+        // ============================================
+
+        function handleLogin(e) {
+            e.preventDefault();
+            const email = document.getElementById('login-email').value;
+            const password = document.getElementById('login-password').value;
+            signIn(email, password);
+        }
+
+        function handleSignup(e) {
+            e.preventDefault();
+            const email = document.getElementById('signup-email').value;
+            const password = document.getElementById('signup-password').value;
+            const marketing = document.getElementById('signup-marketing').checked;
+            signUp(email, password, marketing);
+        }
+
+        function handleResetPassword(e) {
+            e.preventDefault();
+            const email = document.getElementById('reset-email').value;
+            resetPassword(email);
+        }
+
+        function toggleBeachSelection(slug) {
+            const selected = state.selectedBeaches;
+            if (selected.includes(slug)) {
+                setState({ selectedBeaches: selected.filter(s => s !== slug) });
+            } else if (selected.length < MAX_FREE_BEACHES) {
+                setState({ selectedBeaches: [...selected, slug] });
+            }
+        }
+
+        function completeOnboarding() {
+            if (state.selectedBeaches.length === 0) {
+                alert('Please select at least one beach');
+                return;
+            }
+            saveUserBeaches(state.selectedBeaches);
+        }
+
+        // ============================================
+        // RENDER FUNCTIONS - AUTH VIEWS
+        // ============================================
+
+        function renderLoading() {
+            return `
+                <div class="min-h-screen flex items-center justify-center">
+                    <div class="text-center">
+                        <div class="w-12 h-12 border-4 border-indigo-200 border-t-indigo-600 rounded-full animate-spin mx-auto mb-4"></div>
+                        <p class="text-gray-500">loading shorecast...</p>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderLogin() {
+            return `
+                <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
+                    <div class="w-full max-w-md">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
+                            <p class="text-gray-500">your beaches, one glance</p>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h2 class="text-xl font-medium text-gray-900 mb-6">welcome back</h2>
+                            
+                            ${state.authError ? `
+                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                </div>
+                            ` : ''}
+                            
+                            <form onsubmit="handleLogin(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                                    <input type="email" id="login-email" required
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                        placeholder="you@example.com">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">password</label>
+                                    <input type="password" id="login-password" required
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                        placeholder="••••••••">
+                                </div>
+                                
+                                <button type="submit" 
+                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                    ${state.authLoading ? 'disabled' : ''}>
+                                    ${state.authLoading ? 'signing in...' : 'sign in'}
+                                </button>
+                            </form>
+                            
+                            <div class="mt-4 text-center">
+                                <button onclick="setState({ view: 'forgot-password', authError: null })" 
+                                    class="text-sm text-indigo-600 hover:text-indigo-700">
+                                    forgot password?
+                                </button>
+                            </div>
+                            
+                            <p class="mt-6 text-center text-sm text-gray-500">
+                                don't have an account? 
+                                <button onclick="setState({ view: 'signup', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                    sign up
+                                </button>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderSignup() {
+            return `
+                <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
+                    <div class="w-full max-w-md">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
+                            <p class="text-gray-500">your beaches, one glance</p>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h2 class="text-xl font-medium text-gray-900 mb-6">create account</h2>
+                            
+                            ${state.authError ? `
+                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                </div>
+                            ` : ''}
+                            
+                            <form onsubmit="handleSignup(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                                    <input type="email" id="signup-email" required
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                        placeholder="you@example.com">
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">password</label>
+                                    <input type="password" id="signup-password" required minlength="6"
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                        placeholder="••••••••">
+                                    <p class="text-xs text-gray-500 mt-1">minimum 6 characters</p>
+                                </div>
+                                
+                                <div class="flex items-start">
+                                    <input type="checkbox" id="signup-marketing" 
+                                        class="mt-1 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
+                                    <label for="signup-marketing" class="ml-2 text-sm text-gray-600">
+                                        send me occasional updates about new features
+                                    </label>
+                                </div>
+                                
+                                <button type="submit" 
+                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                    ${state.authLoading ? 'disabled' : ''}>
+                                    ${state.authLoading ? 'creating account...' : 'create account'}
+                                </button>
+                            </form>
+                            
+                            <p class="mt-4 text-xs text-gray-500 text-center">
+                                by signing up, you agree to our terms of service and privacy policy
+                            </p>
+                            
+                            <p class="mt-6 text-center text-sm text-gray-500">
+                                already have an account? 
+                                <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                    sign in
+                                </button>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderForgotPassword() {
+            return `
+                <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
+                    <div class="w-full max-w-md">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
+                            <p class="text-gray-500">reset your password</p>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h2 class="text-xl font-medium text-gray-900 mb-6">forgot password</h2>
+                            
+                            ${state.authError ? `
+                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
+                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                </div>
+                            ` : ''}
+                            
+                            <p class="text-gray-600 text-sm mb-6">
+                                enter your email and we'll send you a link to reset your password
+                            </p>
+                            
+                            <form onsubmit="handleResetPassword(event)" class="space-y-4">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                                    <input type="email" id="reset-email" required
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
+                                        placeholder="you@example.com">
+                                </div>
+                                
+                                <button type="submit" 
+                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                    ${state.authLoading ? 'disabled' : ''}>
+                                    ${state.authLoading ? 'sending...' : 'send reset link'}
+                                </button>
+                            </form>
+                            
+                            <p class="mt-6 text-center text-sm text-gray-500">
+                                <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                    back to sign in
+                                </button>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderCheckEmail() {
+            return `
+                <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
+                    <div class="w-full max-w-md">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
+                            <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                </svg>
+                            </div>
+                            
+                            <h2 class="text-xl font-medium text-gray-900 mb-4">check your email</h2>
+                            <p class="text-gray-600 mb-6">
+                                we've sent you a confirmation link. click it to complete your signup.
+                            </p>
+                            
+                            <button onclick="setState({ view: 'login' })" 
+                                class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                back to sign in
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderResetSent() {
+            return `
+                <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
+                    <div class="w-full max-w-md">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
+                            <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                </svg>
+                            </div>
+                            
+                            <h2 class="text-xl font-medium text-gray-900 mb-4">reset link sent</h2>
+                            <p class="text-gray-600 mb-6">
+                                check your email for a link to reset your password.
+                            </p>
+                            
+                            <button onclick="setState({ view: 'login' })" 
+                                class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                back to sign in
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderOnboarding() {
+            const filtered = getFilteredBeaches();
+            
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="text-center mb-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">choose your beaches</h1>
+                            <p class="text-gray-500">select up to ${MAX_FREE_BEACHES} beaches to track</p>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
+                            <input type="text" 
+                                value="${state.beachSearch}"
+                                oninput="setState({ beachSearch: event.target.value })"
+                                placeholder="search beaches..."
+                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 max-h-96 overflow-y-auto">
+                            <div class="space-y-2">
+                                ${filtered.length === 0 ? `
+                                    <p class="text-center text-gray-500 py-8">no beaches found</p>
+                                ` : filtered.map(beach => {
+                                    const isSelected = state.selectedBeaches.includes(beach.slug);
+                                    const canSelect = state.selectedBeaches.length < MAX_FREE_BEACHES;
+                                    
+                                    return `
+                                        <button 
+                                            onclick="toggleBeachSelection('${beach.slug}')"
+                                            class="w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                                                isSelected 
+                                                    ? 'border-indigo-500 bg-indigo-50' 
+                                                    : canSelect 
+                                                        ? 'border-gray-200 hover:border-gray-300' 
+                                                        : 'border-gray-100 opacity-50 cursor-not-allowed'
+                                            }"
+                                            ${!isSelected && !canSelect ? 'disabled' : ''}>
+                                            <div class="text-left">
+                                                <div class="font-medium text-gray-900">${beach.name}</div>
+                                                <div class="text-sm text-gray-500">${beach.location}</div>
+                                            </div>
+                                            ${isSelected ? `
+                                                <svg class="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                                    <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                                                </svg>
+                                            ` : ''}
+                                        </button>
+                                    `;
+                                }).join('')}
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-6">
+                            <div class="flex items-center justify-between mb-4">
+                                <span class="text-gray-600">selected beaches</span>
+                                <span class="text-gray-900 font-medium">${state.selectedBeaches.length}/${MAX_FREE_BEACHES}</span>
+                            </div>
+                            
+                            <button 
+                                onclick="completeOnboarding()"
+                                class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                ${state.selectedBeaches.length === 0 ? 'disabled' : ''}>
+                                continue to dashboard
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ============================================
+        // RENDER FUNCTIONS - DASHBOARD VIEWS
+        // ============================================
 
         function renderTimeSlots() {
             return state.timeSlots.map(s => `
@@ -312,74 +954,136 @@
             `;
         }
 
-        function render() {
-            const app = document.getElementById('app');
-            
-            app.innerHTML = `
-                <header class="mb-8">
-                    <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
-                    <p class="text-gray-400 text-sm">${getUpdateText()}</p>
-                </header>
-
-                <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
-                    ${renderTimeSlots()}
-                </div>
-
-                <div class="flex gap-3 mb-8">
-                    ${['swimming', 'dipping'].map(m => `
-                        <button onclick="setState({ mode: '${m}' }); fetchData();"
-                            class="flex-1 py-3 rounded-xl font-medium transition-all ${
-                                state.mode === m ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
-                            }">
-                            ${m}
+        function renderDashboard() {
+            return `
+                <div class="max-w-5xl mx-auto px-4 py-8 fade-in">
+                    <header class="mb-8 flex items-center justify-between">
+                        <div>
+                            <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
+                            <p class="text-gray-400 text-sm">${getUpdateText()}</p>
+                        </div>
+                        <button onclick="signOut()" 
+                            class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all">
+                            sign out
                         </button>
-                    `).join('')}
-                </div>
+                    </header>
 
-                ${state.loading ? `
-                    <div class="space-y-6">
-                        ${[1,2,3].map(() => `
-                            <div class="bg-white rounded-2xl overflow-hidden shadow animate-pulse">
-                                <div class="h-52 bg-gray-200"></div>
-                                <div class="p-5"><div class="h-20 bg-gray-100 rounded-xl"></div></div>
-                            </div>
+                    <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+                        ${renderTimeSlots()}
+                    </div>
+
+                    <div class="flex gap-3 mb-8">
+                        ${['swimming', 'dipping'].map(m => `
+                            <button onclick="setState({ mode: '${m}' }); fetchData();"
+                                class="flex-1 py-3 rounded-xl font-medium transition-all ${
+                                    state.mode === m ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
+                                }">
+                                ${m}
+                            </button>
                         `).join('')}
                     </div>
-                ` : ''}
 
-                ${state.error ? `
-                    <div class="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
-                        <p class="text-red-600 mb-2">couldn't load conditions</p>
-                        <p class="text-red-400 text-sm mb-4">${state.error}</p>
-                        <button onclick="fetchData()" class="px-5 py-2 bg-red-100 text-red-600 rounded-xl hover:bg-red-200">retry</button>
-                    </div>
-                ` : ''}
+                    ${state.loading ? `
+                        <div class="space-y-6">
+                            ${[1,2,3].map(() => `
+                                <div class="bg-white rounded-2xl overflow-hidden shadow animate-pulse">
+                                    <div class="h-52 bg-gray-200"></div>
+                                    <div class="p-5"><div class="h-20 bg-gray-100 rounded-xl"></div></div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    ` : ''}
 
-                ${!state.loading && !state.error && state.data?.beaches ? `
-                    <div class="space-y-6 mb-8">
-                        ${state.data.beaches.map(b => renderBeachCard(b)).join('')}
-                    </div>
+                    ${state.error ? `
+                        <div class="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+                            <p class="text-red-600 mb-2">couldn't load conditions</p>
+                            <p class="text-red-400 text-sm mb-4">${state.error}</p>
+                            <button onclick="fetchData()" class="px-5 py-2 bg-red-100 text-red-600 rounded-xl hover:bg-red-200">retry</button>
+                        </div>
+                    ` : ''}
 
-                    <button class="w-full py-5 border-2 border-dashed border-gray-300 rounded-2xl text-gray-400 font-medium hover:border-indigo-400 hover:text-indigo-500 hover:bg-indigo-50 transition-all">
-                        + add another beach
-                    </button>
+                    ${!state.loading && !state.error && state.data?.beaches ? `
+                        <div class="space-y-6 mb-8">
+                            ${state.data.beaches.map(b => renderBeachCard(b)).join('')}
+                        </div>
 
-                    <footer class="text-center text-gray-400 text-xs mt-8 pt-6 border-t border-gray-200">
-                        free tier: 3 beaches · upgrade for unlimited
-                        <br>
-                        <a href="https://ko-fi.com/shorecast" target="_blank" rel="noopener noreferrer" class="text-indigo-500 hover:text-indigo-600 mt-2 inline-block transition-colors">
-                            ☕ buy us a coffee
-                        </a>
-                    </footer>
-                ` : ''}
+                        <div class="bg-white rounded-2xl border-2 border-dashed border-gray-200 p-8 text-center hover:border-indigo-300 transition-all">
+                            <p class="text-gray-500 mb-2">free tier: ${state.userBeaches.length}/${MAX_FREE_BEACHES} beaches</p>
+                            <p class="text-sm text-gray-400">upgrade for unlimited beaches, forecasts, and more</p>
+                        </div>
 
-                ${renderInfoModal()}
+                        <footer class="mt-12 text-center text-sm text-gray-400">
+                            <p class="mb-2">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
+                            <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700">
+                                support shorecast
+                            </a>
+                        </footer>
+                    ` : ''}
+
+                    ${renderInfoModal()}
+                </div>
             `;
         }
 
-        // Initialize
-        fetchData();
-        render();
+        // ============================================
+        // MAIN RENDER FUNCTION
+        // ============================================
+
+        function render() {
+            const app = document.getElementById('app');
+            
+            switch (state.view) {
+                case 'loading':
+                    app.innerHTML = renderLoading();
+                    break;
+                case 'login':
+                    app.innerHTML = renderLogin();
+                    break;
+                case 'signup':
+                    app.innerHTML = renderSignup();
+                    break;
+                case 'forgot-password':
+                    app.innerHTML = renderForgotPassword();
+                    break;
+                case 'check-email':
+                    app.innerHTML = renderCheckEmail();
+                    break;
+                case 'reset-sent':
+                    app.innerHTML = renderResetSent();
+                    break;
+                case 'onboarding':
+                    app.innerHTML = renderOnboarding();
+                    break;
+                case 'dashboard':
+                    app.innerHTML = renderDashboard();
+                    break;
+                default:
+                    app.innerHTML = renderLoading();
+            }
+        }
+
+        // ============================================
+        // INITIALIZATION
+        // ============================================
+
+        // Listen for auth state changes
+        supabase.auth.onAuthStateChange((event, session) => {
+            if (event === 'SIGNED_IN' && session) {
+                setState({ user: session.user });
+                loadUserProfile();
+            } else if (event === 'SIGNED_OUT') {
+                setState({ 
+                    user: null, 
+                    userProfile: null, 
+                    userBeaches: [],
+                    view: 'login',
+                    data: null
+                });
+            }
+        });
+
+        // Initial auth check
+        checkAuth();
     </script>
 </body>
 </html>
