@@ -828,18 +828,33 @@
                             ${rec.statusText || '...'}
                         </span>
 
-                        ${beach.sun?.showSunriseBadge ? `
-                            <span class="absolute top-4 left-4 bg-white/95 text-amber-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
-                                ☀️ sunrise ${beach.sun.sunrise}
-                            </span>
-                        ` : ''}
+                        ${(() => {
+                            // Show sunrise for ALL beaches during morning slots (safety feature)
+                            const isMorningSlot = state.time === 'now' || state.time === 'tomorrow-am' || state.time === 'day-after-am';
+                            const showSunrise = isMorningSlot && beach.sun?.sunrise;
+                            
+                            if (showSunrise) {
+                                return `
+                                    <span class="absolute top-4 left-4 bg-white/95 text-amber-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
+                                        ☀️ sunrise ${beach.sun.sunrise}
+                                    </span>
+                                `;
+                            }
+                            return '';
+                        })()}
                         
                         ${(() => {
                             // Show sunset for ALL beaches during evening slots (safety feature)
                             const isEveningSlot = state.time === 'tonight' || state.time === 'tomorrow-pm';
-                            if (isEveningSlot && beach.sun?.sunset) {
+                            const showSunset = isEveningSlot && beach.sun?.sunset;
+                            
+                            // Check if sunrise is also showing (only for edge case of "now" during dawn)
+                            const isMorningSlot = state.time === 'now' || state.time === 'tomorrow-am' || state.time === 'day-after-am';
+                            const sunriseShowing = isMorningSlot && beach.sun?.sunrise;
+                            
+                            if (showSunset) {
                                 return `
-                                    <span class="absolute ${beach.sun?.showSunriseBadge ? 'top-14' : 'top-4'} left-4 bg-white/95 text-orange-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
+                                    <span class="absolute ${sunriseShowing ? 'top-14' : 'top-4'} left-4 bg-white/95 text-orange-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
                                         🌅 sunset ${beach.sun.sunset}
                                     </span>
                                 `;
