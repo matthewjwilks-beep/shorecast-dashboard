@@ -834,11 +834,18 @@
                             </span>
                         ` : ''}
                         
-                        ${beach.sun?.showSunsetBadge ? `
-                            <span class="absolute top-14 left-4 bg-white/95 text-orange-500 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
-                                🌅 sunset ${beach.sun.sunset}
-                            </span>
-                        ` : ''}
+                        ${(() => {
+                            // Show sunset for ALL beaches during evening slots (safety feature)
+                            const isEveningSlot = state.time === 'tonight' || state.time === 'tomorrow-pm';
+                            if (isEveningSlot && beach.sun?.sunset) {
+                                return `
+                                    <span class="absolute ${beach.sun?.showSunriseBadge ? 'top-14' : 'top-4'} left-4 bg-white/95 text-orange-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
+                                        🌅 sunset ${beach.sun.sunset}
+                                    </span>
+                                `;
+                            }
+                            return '';
+                        })()}
 
                         <div class="absolute bottom-4 left-4 right-4 text-white">
                             <h2 class="text-2xl md:text-3xl font-light mb-1">${beach.name}</h2>
@@ -904,26 +911,6 @@
                                 </div>
                             </div>
                         </div>
-
-                        ${(() => {
-                            // Show sunset info for west-facing beaches during evening time slots
-                            const isEveningSlot = state.time === 'tonight' || state.time === 'tomorrow-pm';
-                            const isWestFacing = beach.facing && ['west', 'northwest', 'southwest'].includes(beach.facing);
-                            
-                            if (isEveningSlot && isWestFacing && beach.sun?.sunset && !beach.sun?.showSunsetBadge) {
-                                return `
-                                    <div class="mb-4 p-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-100">
-                                        <div class="flex items-center gap-2 text-sm">
-                                            <span class="text-orange-500">🌅</span>
-                                            <span class="text-gray-700">
-                                                ${beach.facing}-facing beach • sunset at ${beach.sun.sunset}
-                                            </span>
-                                        </div>
-                                    </div>
-                                `;
-                            }
-                            return '';
-                        })()}
 
                         ${beach.isForecast ? `
                             <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
