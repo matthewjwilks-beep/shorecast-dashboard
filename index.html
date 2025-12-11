@@ -454,6 +454,15 @@
             }
         }
 
+        function startEditingBeaches() {
+            loadAvailableBeaches().then(() => {
+                setState({ 
+                    selectedBeaches: [...state.userBeaches], // Pre-select current beaches
+                    view: 'onboarding'
+                });
+            });
+        }
+
         function completeOnboarding() {
             if (state.selectedBeaches.length === 0) {
                 alert('Please select at least one beach');
@@ -711,13 +720,20 @@
 
         function renderOnboarding() {
             const filtered = getFilteredBeaches();
+            const isEditing = state.userBeaches.length > 0; // True if user already has beaches
             
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
                     <div class="max-w-3xl mx-auto">
                         <div class="text-center mb-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-2">choose your beaches</h1>
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">${isEditing ? 'manage your beaches' : 'choose your beaches'}</h1>
                             <p class="text-gray-500">select up to ${MAX_FREE_BEACHES} beaches to track</p>
+                            ${isEditing ? `
+                                <button onclick="setState({ view: 'dashboard' }); fetchData();" 
+                                    class="mt-4 text-sm text-indigo-600 hover:text-indigo-700">
+                                    ← back to dashboard
+                                </button>
+                            ` : ''}
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
@@ -772,7 +788,7 @@
                                 onclick="completeOnboarding()"
                                 class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
                                 ${state.selectedBeaches.length === 0 ? 'disabled' : ''}>
-                                continue to dashboard
+                                ${isEditing ? 'save changes' : 'continue to dashboard'}
                             </button>
                         </div>
                     </div>
@@ -999,15 +1015,23 @@
         function renderDashboard() {
             return `
                 <div class="max-w-5xl mx-auto px-4 py-8 fade-in">
-                    <header class="mb-8 flex items-center justify-between">
-                        <div>
-                            <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
-                            <p class="text-gray-400 text-sm">${getUpdateText()}</p>
+                    <header class="mb-8">
+                        <div class="flex items-start justify-between mb-4">
+                            <div>
+                                <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
+                                <p class="text-gray-400 text-sm">${getUpdateText()}</p>
+                            </div>
                         </div>
-                        <button onclick="signOut()" 
-                            class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all">
-                            sign out
-                        </button>
+                        <div class="flex flex-wrap gap-2">
+                            <button onclick="startEditingBeaches()" 
+                                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all border border-gray-200">
+                                manage beaches
+                            </button>
+                            <button onclick="signOut()" 
+                                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all">
+                                sign out
+                            </button>
+                        </div>
                     </header>
 
                     <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
