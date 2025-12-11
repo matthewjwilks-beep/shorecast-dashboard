@@ -75,7 +75,6 @@
             // Onboarding state
             availableBeaches: [],
             selectedBeaches: [],
-            beachSearch: '',
             
             // Settings
             showSettings: false
@@ -370,12 +369,49 @@
             return colors[status] || { badge: 'bg-gray-400', border: 'border-l-gray-400', bg: 'from-gray-50 to-gray-100' };
         }
 
-        function getFilteredBeaches() {
-            const search = state.beachSearch.toLowerCase();
+        function getFilteredBeaches(searchTerm = '') {
+            const search = searchTerm.toLowerCase();
             return state.availableBeaches.filter(b => 
                 b.name.toLowerCase().includes(search) || 
                 b.location.toLowerCase().includes(search)
             );
+        }
+
+        function updateBeachSearch(value) {
+            // Update beach list without triggering full re-render
+            const container = document.getElementById('beach-list-container');
+            if (!container) return;
+            
+            const filtered = getFilteredBeaches(value);
+            container.innerHTML = filtered.length === 0 ? `
+                <p class="text-center text-gray-500 py-8">no beaches found</p>
+            ` : filtered.map(beach => {
+                const isSelected = state.selectedBeaches.includes(beach.slug);
+                const canSelect = state.selectedBeaches.length < MAX_FREE_BEACHES;
+                
+                return `
+                    <button 
+                        onclick="toggleBeachSelection('${beach.slug}')"
+                        class="w-full flex items-center justify-between p-4 rounded-xl border-2 transition-all ${
+                            isSelected 
+                                ? 'border-indigo-500 bg-indigo-50' 
+                                : canSelect 
+                                    ? 'border-gray-200 hover:border-gray-300' 
+                                    : 'border-gray-100 opacity-50 cursor-not-allowed'
+                        }"
+                        ${!isSelected && !canSelect ? 'disabled' : ''}>
+                        <div class="text-left">
+                            <div class="font-medium text-gray-900">${beach.name}</div>
+                            <div class="text-sm text-gray-500">${beach.location}</div>
+                        </div>
+                        ${isSelected ? `
+                            <svg class="w-6 h-6 text-indigo-600" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"></path>
+                            </svg>
+                        ` : ''}
+                    </button>
+                `;
+            }).join('');
         }
 
         // ============================================
@@ -409,6 +445,12 @@
                 setState({ selectedBeaches: selected.filter(s => s !== slug) });
             } else if (selected.length < MAX_FREE_BEACHES) {
                 setState({ selectedBeaches: [...selected, slug] });
+            }
+            
+            // Update the beach list to reflect selection without losing search input
+            const searchInput = document.getElementById('beach-search-input');
+            if (searchInput) {
+                updateBeachSearch(searchInput.value);
             }
         }
 
@@ -680,14 +722,14 @@
                         
                         <div class="bg-white rounded-2xl shadow-lg p-6 mb-6">
                             <input type="text" 
-                                value="${state.beachSearch}"
-                                oninput="setState({ beachSearch: event.target.value })"
+                                id="beach-search-input"
+                                oninput="updateBeachSearch(this.value)"
                                 placeholder="search beaches..."
                                 class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-6 mb-6 max-h-96 overflow-y-auto">
-                            <div class="space-y-2">
+                            <div class="space-y-2" id="beach-list-container">
                                 ${filtered.length === 0 ? `
                                     <p class="text-center text-gray-500 py-8">no beaches found</p>
                                 ` : filtered.map(beach => {
