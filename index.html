@@ -829,14 +829,14 @@
                         </span>
 
                         ${beach.sun?.showSunriseBadge ? `
-                            <span class="absolute top-4 left-4 bg-white text-amber-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow">
-                                sunrise ${beach.sun.sunrise} ☀️
+                            <span class="absolute top-4 left-4 bg-white/95 text-amber-600 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
+                                ☀️ sunrise ${beach.sun.sunrise}
                             </span>
                         ` : ''}
                         
                         ${beach.sun?.showSunsetBadge ? `
-                            <span class="absolute top-4 left-4 bg-white text-orange-500 text-xs font-semibold px-3 py-1.5 rounded-xl shadow">
-                                sunset ${beach.sun.sunset} 🌅
+                            <span class="absolute top-14 left-4 bg-white/95 text-orange-500 text-xs font-semibold px-3 py-1.5 rounded-xl shadow backdrop-blur-sm">
+                                🌅 sunset ${beach.sun.sunset}
                             </span>
                         ` : ''}
 
@@ -904,6 +904,26 @@
                                 </div>
                             </div>
                         </div>
+
+                        ${(() => {
+                            // Show sunset info for west-facing beaches during evening time slots
+                            const isEveningSlot = state.time === 'tonight' || state.time === 'tomorrow-pm';
+                            const isWestFacing = beach.facing && ['west', 'northwest', 'southwest'].includes(beach.facing);
+                            
+                            if (isEveningSlot && isWestFacing && beach.sun?.sunset && !beach.sun?.showSunsetBadge) {
+                                return `
+                                    <div class="mb-4 p-3 bg-gradient-to-r from-orange-50 to-amber-50 rounded-xl border border-orange-100">
+                                        <div class="flex items-center gap-2 text-sm">
+                                            <span class="text-orange-500">🌅</span>
+                                            <span class="text-gray-700">
+                                                ${beach.facing}-facing beach • sunset at ${beach.sun.sunset}
+                                            </span>
+                                        </div>
+                                    </div>
+                                `;
+                            }
+                            return '';
+                        })()}
 
                         ${beach.isForecast ? `
                             <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
