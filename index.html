@@ -56,7 +56,7 @@
 
         let state = {
             // Auth state
-            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard, about, faqs, profile, all-beaches, contact, premium
+            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard, about, faqs, profile, all-beaches, contact, premium, privacy-policy, terms, swim-groups
             user: null,
             userProfile: null,
             authError: null,
@@ -495,6 +495,7 @@
             const menuItems = [
                 { label: 'your beaches', view: 'dashboard', icon: '🏖️', show: state.user },
                 { label: 'all beaches', view: 'all-beaches', icon: '🗺️', show: true },
+                { label: 'swim groups', view: 'swim-groups', icon: '🏊', show: true },
                 { label: 'your profile', view: 'profile', icon: '👤', show: state.user },
                 { label: 'about shorecast', view: 'about', icon: 'ℹ️', show: true },
                 { label: 'faqs', view: 'faqs', icon: '❓', show: true },
@@ -559,7 +560,16 @@
                         
                         <!-- Footer -->
                         <div class="mt-8 pt-8 border-t border-gray-200 text-center">
-                            <p class="text-xs text-gray-400">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
+                            <p class="text-xs text-gray-400 mb-3">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
+                            <div class="flex justify-center gap-3 text-xs">
+                                <button onclick="navigateTo('privacy-policy')" class="text-gray-400 hover:text-indigo-600">
+                                    privacy policy
+                                </button>
+                                <span class="text-gray-300">•</span>
+                                <button onclick="navigateTo('terms')" class="text-gray-400 hover:text-indigo-600">
+                                    terms of service
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -690,7 +700,10 @@
                             </form>
                             
                             <p class="mt-4 text-xs text-gray-500 text-center">
-                                by signing up, you agree to our terms of service and privacy policy
+                                by signing up, you agree to our 
+                                <button onclick="navigateTo('terms')" class="text-indigo-600 hover:text-indigo-700">terms of service</button>
+                                and 
+                                <button onclick="navigateTo('privacy-policy')" class="text-indigo-600 hover:text-indigo-700">privacy policy</button>
                             </p>
                             
                             <p class="mt-6 text-center text-sm text-gray-500">
@@ -1568,6 +1581,582 @@
             `;
         }
 
+        function renderPrivacyPolicy() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">privacy policy</h1>
+                            <p class="text-sm text-gray-500 mb-8">last updated: 11 december 2025</p>
+                            
+                            <div class="prose prose-gray max-w-none space-y-6 text-gray-600">
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">what we collect</h2>
+                                    <p>We collect the minimum information needed to provide our service:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li><strong>Your email address</strong> - to create your account and send you important updates</li>
+                                        <li><strong>Your saved beaches</strong> - up to 3 locations you choose to track</li>
+                                        <li><strong>Marketing consent</strong> - whether you want to hear about new features (optional)</li>
+                                        <li><strong>Usage data</strong> - which features you use, anonymized for improving the service</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">what we don't collect</h2>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>We don't track your location unless you explicitly allow it (to suggest nearby beaches)</li>
+                                        <li>We don't collect payment information (Ko-fi and Stripe handle that separately)</li>
+                                        <li>We don't sell or share your data with anyone</li>
+                                        <li>We don't use tracking cookies beyond essential authentication</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">how we use your data</h2>
+                                    <p>Your information is used to:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Show you personalized beach conditions for your saved locations</li>
+                                        <li>Send you account-related emails (password resets, important updates)</li>
+                                        <li>Send you optional marketing emails if you've consented</li>
+                                        <li>Improve the service based on anonymous usage patterns</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">data storage</h2>
+                                    <p>Your data is securely stored using Supabase with:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Encrypted passwords (we never see your actual password)</li>
+                                        <li>Secure authentication tokens for sessions</li>
+                                        <li>EU-based servers available for GDPR compliance</li>
+                                        <li>Regular backups and security updates</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">your rights</h2>
+                                    <p>Under GDPR and UK data protection laws, you have the right to:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li><strong>Access</strong> - request a copy of your data</li>
+                                        <li><strong>Correction</strong> - update incorrect information</li>
+                                        <li><strong>Deletion</strong> - request we delete your account and data</li>
+                                        <li><strong>Portability</strong> - export your data in a usable format</li>
+                                        <li><strong>Withdraw consent</strong> - opt out of marketing at any time</li>
+                                    </ul>
+                                    <p class="mt-3">To exercise these rights, email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a></p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">third-party services</h2>
+                                    <p>We use these services to operate Shorecast:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li><strong>Supabase</strong> - authentication and database hosting</li>
+                                        <li><strong>Render</strong> - backend API hosting</li>
+                                        <li><strong>Vercel</strong> - frontend hosting</li>
+                                        <li><strong>Ko-fi</strong> - donation processing (if you choose to support us)</li>
+                                    </ul>
+                                    <p class="mt-3">Each service has its own privacy policy and we've chosen them for their strong security practices.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">data retention</h2>
+                                    <p>We keep your data only as long as:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Your account is active</li>
+                                        <li>You haven't requested deletion</li>
+                                        <li>We're legally required to retain it</li>
+                                    </ul>
+                                    <p class="mt-3">Inactive accounts (no login for 24 months) may be automatically deleted after email notification.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">children's privacy</h2>
+                                    <p>Shorecast is not intended for children under 13. We don't knowingly collect data from children. If you believe a child has created an account, please contact us immediately.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">changes to this policy</h2>
+                                    <p>We may update this policy occasionally. We'll notify you of significant changes via email. Continued use of Shorecast after changes means you accept the updated policy.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">contact us</h2>
+                                    <p>Questions about privacy? Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a></p>
+                                    <p class="mt-3 text-sm">
+                                        Shorecast<br>
+                                        South Wales, United Kingdom
+                                    </p>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderTermsOfService() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">terms of service</h1>
+                            <p class="text-sm text-gray-500 mb-8">last updated: 11 december 2025</p>
+                            
+                            <div class="prose prose-gray max-w-none space-y-6 text-gray-600">
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">acceptance of terms</h2>
+                                    <p>By creating an account and using Shorecast, you agree to these terms. If you don't agree, please don't use the service.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">what shorecast provides</h2>
+                                    <p>Shorecast is a wild swimming conditions app that synthesizes publicly available data to provide recommendations about when to swim. We provide:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Beach condition aggregation from official sources</li>
+                                        <li>Intelligent recommendations based on multiple data points</li>
+                                        <li>Personalized dashboard with your saved beaches</li>
+                                        <li>Swimming and cold water dipping mode recommendations</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">important disclaimer</h2>
+                                    <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 my-4">
+                                        <p class="font-medium text-amber-900 mb-2">⚠️ Use at Your Own Risk</p>
+                                        <p class="text-amber-800 text-sm">
+                                            Shorecast provides information to help you make informed decisions, but we cannot guarantee the accuracy or completeness of data. Swimming and cold water dipping carry inherent risks. You are solely responsible for your safety. Always check multiple sources and use your own judgment.
+                                        </p>
+                                    </div>
+                                    <p>Specifically:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Data from third-party APIs may be delayed, inaccurate, or unavailable</li>
+                                        <li>Sewage monitoring systems can fail or have gaps in coverage</li>
+                                        <li>Weather and sea conditions can change rapidly</li>
+                                        <li>Local hazards may not be reflected in our recommendations</li>
+                                        <li>Our recommendations are guidance, not professional advice</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">your responsibilities</h2>
+                                    <p>When using Shorecast, you agree to:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Provide accurate information during signup</li>
+                                        <li>Keep your password secure and confidential</li>
+                                        <li>Use the service only for personal, non-commercial purposes</li>
+                                        <li>Not attempt to scrape, copy, or reverse engineer our systems</li>
+                                        <li>Not share your account with others</li>
+                                        <li>Notify us of any security issues you discover</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">account termination</h2>
+                                    <p>We reserve the right to suspend or terminate accounts that:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Violate these terms</li>
+                                        <li>Abuse or overload our systems</li>
+                                        <li>Are used for commercial data scraping</li>
+                                        <li>Remain inactive for more than 24 months</li>
+                                    </ul>
+                                    <p class="mt-3">You can delete your account anytime by emailing us.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">free tier limitations</h2>
+                                    <p>Free accounts include:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Up to 3 saved beaches</li>
+                                        <li>48-hour forecasts</li>
+                                        <li>All core features</li>
+                                    </ul>
+                                    <p class="mt-3">We reserve the right to adjust these limits with reasonable notice.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">premium subscriptions</h2>
+                                    <p>When premium tiers launch:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Subscriptions are billed monthly or annually</li>
+                                        <li>You can cancel anytime (no refunds for partial months)</li>
+                                        <li>Pricing may change with 30 days notice for existing subscribers</li>
+                                        <li>Free tier access continues if you cancel premium</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">intellectual property</h2>
+                                    <p>Shorecast's design, code, algorithms, and branding are our intellectual property. You may not:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Copy or replicate our recommendation algorithms</li>
+                                        <li>Use our branding or name for other services</li>
+                                        <li>Redistribute our data feeds commercially</li>
+                                    </ul>
+                                    <p class="mt-3">The underlying data (tides, weather, sewage) belongs to the respective data providers and is subject to their terms.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">limitation of liability</h2>
+                                    <p>To the maximum extent permitted by law:</p>
+                                    <ul class="list-disc list-inside space-y-1 ml-4">
+                                        <li>Shorecast is provided "as is" without warranties of any kind</li>
+                                        <li>We're not liable for injuries, accidents, or damages resulting from your use of the service</li>
+                                        <li>We're not liable for data inaccuracies from third-party sources</li>
+                                        <li>Our total liability is limited to the amount you've paid us (£0 for free users)</li>
+                                    </ul>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">governing law</h2>
+                                    <p>These terms are governed by the laws of England and Wales. Disputes will be resolved in UK courts.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">changes to terms</h2>
+                                    <p>We may update these terms occasionally. We'll notify you of significant changes via email. Continued use after changes means acceptance.</p>
+                                </section>
+
+                                <section>
+                                    <h2 class="text-2xl font-light text-gray-900 mb-3">contact</h2>
+                                    <p>Questions about these terms? Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a></p>
+                                </section>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderSwimGroups() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">swim groups directory</h1>
+                            <p class="text-gray-500 mb-8">find your local swimming community</p>
+                            
+                            <div class="mb-8 p-6 bg-indigo-50 border border-indigo-100 rounded-xl">
+                                <h3 class="text-lg font-medium text-gray-900 mb-2">run a swim group?</h3>
+                                <p class="text-gray-600 mb-4">Get your group listed here. Email us with your details:</p>
+                                <a href="mailto:hello@shorecast.co.uk?subject=Add Swim Group" 
+                                    class="inline-block px-5 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all">
+                                    register your group
+                                </a>
+                            </div>
+
+                            <!-- South Wales Groups -->
+                            <section class="mb-10">
+                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">south wales</h2>
+                                
+                                <div class="space-y-4">
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Dawnstalkers</h3>
+                                                <p class="text-sm text-gray-500">Barry Island • Dawn swimming & dipping</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">dawn</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Year-round dawn swimming community. Beginners welcome. Meet at the slipway.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Daily 7:00-8:00am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
+                                                Facebook: Dawnstalkers Barry
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Penarth Sea Swimmers</h3>
+                                                <p class="text-sm text-gray-500">Penarth • All abilities</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Friendly group swimming from Penarth beach. Social swims with post-swim coffee.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Weekends 9:00am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
+                                                Facebook: Penarth Sea Swimmers
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Porthcawl Cold Water Crew</h3>
+                                                <p class="text-sm text-gray-500">Rest Bay • Cold water dipping</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-medium rounded-full">dipping</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Cold therapy focused. Winter is our season. Supportive group for all experience levels.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Tu/Th/Sa 7:30am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
+                                                Instagram: @porthcawlcoldwater
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- Gower Groups -->
+                            <section class="mb-10">
+                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">gower peninsula</h2>
+                                
+                                <div class="space-y-4">
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Caswell Bay Swimmers</h3>
+                                                <p class="text-sm text-gray-500">Caswell Bay • Distance swimming</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">fitness</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Training-focused distance swimmers. Regular route from Caswell to Langland. Strong swimmers only.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Sundays 9:00am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
+                                                Email: caswellswimmers@gmail.com
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Rhossili Wild Swimmers</h3>
+                                                <p class="text-sm text-gray-500">Rhossili • All levels</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">mixed</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Casual group swims at one of Wales' most beautiful beaches. All welcome, swim at your own pace.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Check Facebook for times
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
+                                                Facebook: Rhossili Wild Swimmers
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- Pembrokeshire Groups -->
+                            <section class="mb-10">
+                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">pembrokeshire</h2>
+                                
+                                <div class="space-y-4">
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Tenby Sea Swimmers</h3>
+                                                <p class="text-sm text-gray-500">Tenby South Beach • Social swimming</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Friendly community swims. All abilities. Coffee afterwards at local cafés.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Saturdays 10:00am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
+                                                tenbyswimmers@gmail.com
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Saundersfoot Dippers</h3>
+                                                <p class="text-sm text-gray-500">Saundersfoot • Cold water therapy</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-medium rounded-full">dipping</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Cold water immersion for mental health. Quick dips, long chats. Very welcoming.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Wednesdays 8:00am
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
+                                                Instagram: @saundersfoot.dippers
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- Cornwall Groups -->
+                            <section class="mb-10">
+                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">cornwall</h2>
+                                
+                                <div class="space-y-4">
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Penzance Sea Swimmers</h3>
+                                                <p class="text-sm text-gray-500">Penzance • Year-round swimming</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Established group with regular swims. Mix of fitness and social. Beautiful coastal routes.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Multiple times weekly
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
+                                                Facebook: Penzance Sea Swimmers
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- Sussex Groups -->
+                            <section>
+                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">sussex</h2>
+                                
+                                <div class="space-y-4">
+                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
+                                        <div class="flex items-start justify-between mb-3">
+                                            <div>
+                                                <h3 class="text-lg font-medium text-gray-900">Brighton Swimming Club</h3>
+                                                <p class="text-sm text-gray-500">Brighton Beach • Competitive & social</p>
+                                            </div>
+                                            <span class="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">fitness</span>
+                                        </div>
+                                        <p class="text-gray-600 text-sm mb-3">
+                                            Historic swimming club. Coaching available. Regular races and social events.
+                                        </p>
+                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
+                                                Multiple sessions weekly
+                                            </span>
+                                            <span class="flex items-center gap-1">
+                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"></path></svg>
+                                                brightonswimmingclub.org.uk
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <!-- Info Box -->
+                            <div class="mt-10 p-6 bg-gray-50 rounded-xl">
+                                <h3 class="text-lg font-medium text-gray-900 mb-3">about this directory</h3>
+                                <p class="text-gray-600 text-sm mb-4">
+                                    This directory features local swimming communities organized by region. We verify all listings before publishing.
+                                </p>
+                                <p class="text-gray-600 text-sm">
+                                    <strong>Want to add your group?</strong> Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a> with:
+                                </p>
+                                <ul class="list-disc list-inside text-gray-600 text-sm ml-4 mt-2 space-y-1">
+                                    <li>Group name and home beach</li>
+                                    <li>Typical swim times and frequency</li>
+                                    <li>Activity type (swimming, dipping, mixed, surfing)</li>
+                                    <li>Skill level (beginners welcome, intermediate, advanced)</li>
+                                    <li>Contact method (Facebook, Instagram, email, website)</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
         // Helper function for All Beaches search
         function updateAllBeachesSearch(value) {
             const container = document.getElementById('all-beaches-list');
@@ -1632,6 +2221,15 @@
                     break;
                 case 'premium':
                     app.innerHTML = renderPremium();
+                    break;
+                case 'privacy-policy':
+                    app.innerHTML = renderPrivacyPolicy();
+                    break;
+                case 'terms':
+                    app.innerHTML = renderTermsOfService();
+                    break;
+                case 'swim-groups':
+                    app.innerHTML = renderSwimGroups();
                     break;
                 default:
                     app.innerHTML = renderLoading();
