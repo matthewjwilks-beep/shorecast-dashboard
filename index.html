@@ -56,7 +56,7 @@
 
         let state = {
             // Auth state
-            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard
+            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard, about, faqs, profile, all-beaches, contact, premium
             user: null,
             userProfile: null,
             authError: null,
@@ -76,13 +76,27 @@
             availableBeaches: [],
             selectedBeaches: [],
             
-            // Settings
+            // UI state
+            showSidebar: false,
             showSettings: false
         };
 
         function setState(newState) {
             state = { ...state, ...newState };
             render();
+        }
+
+        function toggleSidebar() {
+            setState({ showSidebar: !state.showSidebar });
+        }
+
+        function navigateTo(view) {
+            setState({ view, showSidebar: false });
+            if (view === 'dashboard') {
+                fetchData();
+            } else if (view === 'all-beaches' || view === 'profile') {
+                loadAvailableBeaches();
+            }
         }
 
         // ============================================
@@ -469,6 +483,87 @@
                 return;
             }
             saveUserBeaches(state.selectedBeaches);
+        }
+
+        // ============================================
+        // RENDER FUNCTIONS - SIDEBAR MENU
+        // ============================================
+
+        function renderSidebar() {
+            if (!state.showSidebar) return '';
+            
+            const menuItems = [
+                { label: 'your beaches', view: 'dashboard', icon: '🏖️', show: state.user },
+                { label: 'all beaches', view: 'all-beaches', icon: '🗺️', show: true },
+                { label: 'your profile', view: 'profile', icon: '👤', show: state.user },
+                { label: 'about shorecast', view: 'about', icon: 'ℹ️', show: true },
+                { label: 'faqs', view: 'faqs', icon: '❓', show: true },
+                { label: 'contact us', view: 'contact', icon: '✉️', show: true },
+                { label: 'upgrade to premium', view: 'premium', icon: '⭐', show: state.user }
+            ];
+            
+            return `
+                <!-- Overlay -->
+                <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onclick="toggleSidebar()"></div>
+                
+                <!-- Sidebar -->
+                <div class="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 overflow-y-auto">
+                    <div class="p-6">
+                        <!-- Header -->
+                        <div class="flex items-center justify-between mb-8">
+                            <h2 class="text-2xl font-light text-gray-900">menu</h2>
+                            <button onclick="toggleSidebar()" 
+                                class="w-10 h-10 rounded-full bg-gray-100 text-gray-600 hover:bg-gray-200 flex items-center justify-center text-xl">
+                                ×
+                            </button>
+                        </div>
+                        
+                        <!-- User Info -->
+                        ${state.user ? `
+                            <div class="mb-8 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl">
+                                <p class="text-sm text-gray-500 mb-1">signed in as</p>
+                                <p class="font-medium text-gray-900 truncate">${state.user.email}</p>
+                            </div>
+                        ` : ''}
+                        
+                        <!-- Menu Items -->
+                        <nav class="space-y-1">
+                            ${menuItems.filter(item => item.show).map(item => `
+                                <button 
+                                    onclick="navigateTo('${item.view}')"
+                                    class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-gray-50 transition-all ${
+                                        state.view === item.view ? 'bg-indigo-50 text-indigo-600 font-medium' : ''
+                                    }">
+                                    <span class="text-xl">${item.icon}</span>
+                                    <span>${item.label}</span>
+                                </button>
+                            `).join('')}
+                        </nav>
+                        
+                        <!-- Support Link -->
+                        <div class="mt-8 pt-8 border-t border-gray-200">
+                            <a href="https://ko-fi.com/shorecast" target="_blank"
+                                class="flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-xl font-medium hover:opacity-90 transition-all">
+                                <span>☕</span>
+                                <span>buy us a coffee</span>
+                            </a>
+                        </div>
+                        
+                        <!-- Sign Out -->
+                        ${state.user ? `
+                            <button onclick="signOut()" 
+                                class="w-full mt-4 py-3 text-gray-500 hover:text-gray-700 text-sm">
+                                sign out
+                            </button>
+                        ` : ''}
+                        
+                        <!-- Footer -->
+                        <div class="mt-8 pt-8 border-t border-gray-200 text-center">
+                            <p class="text-xs text-gray-400">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
+                        </div>
+                    </div>
+                </div>
+            `;
         }
 
         // ============================================
@@ -1043,15 +1138,14 @@
                                 <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
                                 <p class="text-gray-400 text-sm">${getUpdateText()}</p>
                             </div>
-                        </div>
-                        <div class="flex flex-wrap gap-2">
-                            <button onclick="startEditingBeaches()" 
-                                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all border border-gray-200">
-                                manage beaches
-                            </button>
-                            <button onclick="signOut()" 
-                                class="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 rounded-xl hover:bg-gray-100 transition-all">
-                                sign out
+                            <!-- Menu Button -->
+                            <button onclick="toggleSidebar()" 
+                                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-all">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
                             </button>
                         </div>
                     </header>
@@ -1109,8 +1203,384 @@
                     ` : ''}
 
                     ${renderInfoModal()}
+                    ${renderSidebar()}
                 </div>
             `;
+        }
+
+        // ============================================
+        // RENDER FUNCTIONS - ADDITIONAL PAGES
+        // ============================================
+
+        function renderAbout() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">about shorecast</h1>
+                            
+                            <div class="prose prose-gray max-w-none">
+                                <p class="text-lg text-gray-600 leading-relaxed mb-6">
+                                    We're a husband and wife team in South Wales who swim year-round – dawn dips, evening swims, and everything in between.
+                                </p>
+                                
+                                <p class="text-gray-600 leading-relaxed mb-6">
+                                    We built Shorecast because we were tired of jumping between tide tables, weather apps, and water company websites just to answer one question: <em>is it a good morning for a swim?</em>
+                                </p>
+                                
+                                <p class="text-gray-600 leading-relaxed mb-6">
+                                    Now there's one place that brings it all together – and tells you what it means.
+                                </p>
+                                
+                                <h2 class="text-2xl font-light text-gray-900 mt-12 mb-4">what we do</h2>
+                                <p class="text-gray-600 leading-relaxed mb-4">
+                                    Shorecast pulls live data from tide stations, marine buoys, and water company monitors across Wales and England. Then we make sense of it for you with intelligent recommendations – not just raw numbers, but clear answers about when to swim.
+                                </p>
+                                
+                                <h2 class="text-2xl font-light text-gray-900 mt-12 mb-4">our mission</h2>
+                                <p class="text-gray-600 leading-relaxed mb-4">
+                                    If Shorecast helps you get in the water more often, we've done our job. Wild swimming should be simple, safe, and joyful.
+                                </p>
+                                
+                                <div class="mt-12 p-6 bg-gray-50 rounded-xl">
+                                    <p class="text-sm text-gray-500 mb-2">coverage</p>
+                                    <p class="text-gray-900 font-medium">99 beaches across Wales and Southwest England</p>
+                                    <p class="text-sm text-gray-500 mt-4">more regions coming soon</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderFAQs() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-8">frequently asked questions</h1>
+                            
+                            <div class="space-y-6">
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">how much does shorecast cost?</h3>
+                                    <p class="text-gray-600 leading-relaxed">The core service is free. If you find it helpful, you can support us via Ko-fi. We also feature affiliate links to wild swimming gear we use.</p>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">how accurate is the data?</h3>
+                                    <p class="text-gray-600 leading-relaxed">We pull from official sources: UK Admiralty tide predictions, marine weather buoys, and water company monitoring systems. Tide times are reliable. Sea temperature and wave data come from the nearest offshore buoys.</p>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">which beaches are covered?</h3>
+                                    <p class="text-gray-600 leading-relaxed">99 beaches across Wales and Southwest England. From Anglesey to Brighton, covering the entire Welsh coast plus Cornwall, Devon, Dorset, and Sussex.</p>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">what does "our recommendation" mean?</h3>
+                                    <p class="text-gray-600 leading-relaxed">We score conditions based on sewage alerts, weather, wave height, tide timing, and beach orientation. Then we give you a simple verdict: green (looks great), amber (check the details), or red (probably skip it).</p>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">what counts as "active sewage discharge"?</h3>
+                                    <p class="text-gray-600 leading-relaxed">An overflow that's currently releasing untreated wastewater into the sea. Water companies monitor these in real-time and we pull that data directly.</p>
+                                </div>
+                                
+                                <div>
+                                    <h3 class="text-lg font-medium text-gray-900 mb-2">can I trust the sewage data?</h3>
+                                    <p class="text-gray-600 leading-relaxed">We show you exactly what the water companies are reporting. The monitoring is a legal requirement and generally reliable, but systems can go offline or have delays.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderProfile() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-8">your profile</h1>
+                            
+                            <div class="space-y-6">
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
+                                    <div class="px-4 py-3 bg-gray-50 rounded-xl text-gray-600">
+                                        ${state.user?.email || '—'}
+                                    </div>
+                                </div>
+                                
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">your beaches</label>
+                                    <div class="space-y-2 mb-4">
+                                        ${state.userBeaches.map((slug, i) => {
+                                            const beach = state.availableBeaches.find(b => b.slug === slug);
+                                            return beach ? `
+                                                <div class="px-4 py-3 bg-gray-50 rounded-xl flex items-center justify-between">
+                                                    <div>
+                                                        <div class="font-medium text-gray-900">${beach.name}</div>
+                                                        <div class="text-sm text-gray-500">${beach.location}</div>
+                                                    </div>
+                                                    <span class="text-gray-400">#${i + 1}</span>
+                                                </div>
+                                            ` : '';
+                                        }).join('')}
+                                    </div>
+                                    <button onclick="startEditingBeaches()" 
+                                        class="px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-all">
+                                        manage beaches
+                                    </button>
+                                </div>
+                                
+                                <div class="pt-6 border-t border-gray-200">
+                                    <p class="text-sm text-gray-500 mb-4">account tier</p>
+                                    <div class="px-4 py-3 bg-gray-50 rounded-xl">
+                                        <span class="text-gray-900 font-medium">Free</span>
+                                        <span class="text-gray-500"> • ${state.userBeaches.length}/${MAX_FREE_BEACHES} beaches</span>
+                                    </div>
+                                    <button onclick="navigateTo('premium')" 
+                                        class="mt-4 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-all">
+                                        upgrade to premium
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderAllBeaches() {
+            const filtered = getFilteredBeaches();
+            
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">all beaches</h1>
+                            <p class="text-gray-500 mb-6">99 locations across Wales and Southwest England</p>
+                            
+                            <input type="text" 
+                                id="all-beaches-search"
+                                oninput="updateAllBeachesSearch(this.value)"
+                                placeholder="search beaches..."
+                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all mb-6">
+                            
+                            <div id="all-beaches-list" class="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                                ${filtered.map(beach => `
+                                    <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
+                                        <div class="font-medium text-gray-900">${beach.name}</div>
+                                        <div class="text-sm text-gray-500">${beach.location}</div>
+                                        <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderContact() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-2xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">get in touch</h1>
+                            
+                            <p class="text-gray-600 mb-8">
+                                We love hearing from swimmers. Whether you've found a bug, want to suggest a beach, or just want to say hello.
+                            </p>
+                            
+                            <div class="space-y-6">
+                                <a href="mailto:hello@shorecast.co.uk" 
+                                    class="flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
+                                    <span class="text-2xl">✉️</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">email us</div>
+                                        <div class="text-sm text-gray-500">hello@shorecast.co.uk</div>
+                                    </div>
+                                </a>
+                                
+                                <a href="https://ko-fi.com/shorecast" target="_blank"
+                                    class="flex items-center gap-3 p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
+                                    <span class="text-2xl">☕</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">support shorecast</div>
+                                        <div class="text-sm text-gray-500">buy us a coffee on ko-fi</div>
+                                    </div>
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        function renderPremium() {
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-3xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
+                            <div class="inline-block p-4 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl mb-6">
+                                <span class="text-4xl">⭐</span>
+                            </div>
+                            
+                            <h1 class="text-4xl font-light text-gray-900 mb-4">shorecast premium</h1>
+                            <p class="text-gray-500 mb-8">coming soon</p>
+                            
+                            <div class="max-w-md mx-auto text-left space-y-4 mb-8">
+                                <div class="flex items-start gap-3">
+                                    <span class="text-emerald-500 mt-1">✓</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">unlimited beaches</div>
+                                        <div class="text-sm text-gray-500">track all your favorite spots</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <span class="text-emerald-500 mt-1">✓</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">7-day forecasts</div>
+                                        <div class="text-sm text-gray-500">plan your week ahead</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <span class="text-emerald-500 mt-1">✓</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">push notifications</div>
+                                        <div class="text-sm text-gray-500">sewage alerts for your beaches</div>
+                                    </div>
+                                </div>
+                                <div class="flex items-start gap-3">
+                                    <span class="text-emerald-500 mt-1">✓</span>
+                                    <div>
+                                        <div class="font-medium text-gray-900">temperature trends</div>
+                                        <div class="text-sm text-gray-500">track coldest days for dipping</div>
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <p class="text-gray-500 text-sm">
+                                We're working on premium features. In the meantime, you can <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700">support us on Ko-fi</a>.
+                            </p>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        // Helper function for All Beaches search
+        function updateAllBeachesSearch(value) {
+            const container = document.getElementById('all-beaches-list');
+            if (!container) return;
+            
+            const filtered = getFilteredBeaches(value);
+            container.innerHTML = filtered.map(beach => `
+                <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
+                    <div class="font-medium text-gray-900">${beach.name}</div>
+                    <div class="text-sm text-gray-500">${beach.location}</div>
+                    <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
+                </div>
+            `).join('');
         }
 
         // ============================================
@@ -1144,6 +1614,24 @@
                     break;
                 case 'dashboard':
                     app.innerHTML = renderDashboard();
+                    break;
+                case 'about':
+                    app.innerHTML = renderAbout();
+                    break;
+                case 'faqs':
+                    app.innerHTML = renderFAQs();
+                    break;
+                case 'profile':
+                    app.innerHTML = renderProfile();
+                    break;
+                case 'all-beaches':
+                    app.innerHTML = renderAllBeaches();
+                    break;
+                case 'contact':
+                    app.innerHTML = renderContact();
+                    break;
+                case 'premium':
+                    app.innerHTML = renderPremium();
                     break;
                 default:
                     app.innerHTML = renderLoading();
