@@ -1233,9 +1233,23 @@
                     
                     <div class="border-t border-gray-100 my-4"></div>
                     
-                    <div class="text-xs text-gray-400">
-                        <p class="mb-1 font-medium text-gray-500">data sources</p>
-                        <p>Sewage: UK water companies. Tides: UK Admiralty. Weather & waves: Open-Meteo. Updated every 15 minutes.</p>
+                    <div class="text-xs text-gray-400 leading-relaxed">
+                        <p class="mb-2 font-medium text-gray-500">data sources & attribution</p>
+                        
+                        <p class="mb-2">
+                            <strong class="text-gray-600">Tides:</strong> Contains ADMIRALTY® tidal data: © Crown copyright and database right
+                        </p>
+                        
+                        <p class="mb-2">
+                            <strong class="text-gray-600">Weather & waves:</strong> Weather data by 
+                            <a href="https://open-meteo.com/" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">Open-Meteo.com</a>
+                        </p>
+                        
+                        <p class="mb-2">
+                            <strong class="text-gray-600">Sewage:</strong> UK water companies (Welsh Water, South West Water, Southern Water, Wessex Water)
+                        </p>
+                        
+                        <p class="text-gray-400 mt-3">Data updated every 15 minutes</p>
                     </div>
                 </div>
             `;
@@ -1306,9 +1320,17 @@
                             <p class="text-sm text-gray-400">upgrade for unlimited beaches, forecasts, and more</p>
                         </div>
 
-                        <footer class="mt-12 text-center text-sm text-gray-400">
-                            <p class="mb-2">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
-                            <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700">
+                        <footer class="mt-12 text-center text-xs text-gray-400 space-y-3">
+                            <p>made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
+                            
+                            <div class="space-y-1">
+                                <p>Contains ADMIRALTY® tidal data: © Crown copyright and database right</p>
+                                <p>
+                                    Weather data by <a href="https://open-meteo.com/" target="_blank" class="text-indigo-600 hover:text-indigo-700">Open-Meteo.com</a>
+                                </p>
+                            </div>
+                            
+                            <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700 inline-block mt-2">
                                 support shorecast
                             </a>
                         </footer>
