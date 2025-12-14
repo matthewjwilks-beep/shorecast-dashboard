@@ -64,7 +64,7 @@
 
         let state = {
             // Auth state
-            view: 'loading', // loading, login, signup, forgot-password, check-email, reset-sent, onboarding, dashboard, about, faqs, profile, all-beaches, contact, premium, privacy-policy, terms, swim-groups
+            view: 'loading',
             user: null,
             userProfile: null,
             authError: null,
@@ -86,7 +86,10 @@
             
             // UI state
             showSidebar: false,
-            showSettings: false
+            showSettings: false,
+            
+            // Location filter state (NEW)
+            locationFilter: null
         };
 
         function setState(newState) {
@@ -99,6 +102,10 @@
         }
 
         function navigateTo(view) {
+            // Reset location filter when leaving all-beaches page
+            if (state.view === 'all-beaches' && view !== 'all-beaches') {
+                state.locationFilter = null;
+            }
             setState({ view, showSidebar: false });
             if (view === 'dashboard') {
                 fetchData();
@@ -136,26 +143,28 @@
                     password,
                     options: {
                         data: {
-                            marketing_consent: marketingConsent,
-                            consent_timestamp: new Date().toISOString()
+                            marketing_consent: marketingConsent
                         }
                     }
                 });
                 
                 if (error) throw error;
                 
-                if (data.user && !data.session) {
-                    // Email confirmation required
-                    setState({ 
-                        authLoading: false, 
-                        authError: null,
-                        view: 'check-email'
+                // Create profile
+                if (data.user) {
+                    await supabase.from('profiles').upsert({
+                        id: data.user.id,
+                        email: email,
+                        marketing_consent: marketingConsent,
+                        consent_timestamp: marketingConsent ? new Date().toISOString() : null,
+                        tier: 'free'
                     });
-                } else if (data.session) {
-                    // Auto-confirmed (development mode)
-                    setState({ user: data.user, authLoading: false });
-                    await loadUserProfile();
                 }
+                
+                setState({ 
+                    authLoading: false, 
+                    view: 'check-email'
+                });
             } catch (err) {
                 setState({ authError: err.message, authLoading: false });
             }
@@ -174,23 +183,6 @@
                 
                 setState({ user: data.user, authLoading: false });
                 await loadUserProfile();
-            } catch (err) {
-                setState({ authError: err.message, authLoading: false });
-            }
-        }
-
-        async function signInWithProvider(provider) {
-            setState({ authLoading: true, authError: null });
-            
-            try {
-                const { error } = await supabase.auth.signInWithOAuth({
-                    provider,
-                    options: {
-                        redirectTo: window.location.origin
-                    }
-                });
-                
-                if (error) throw error;
             } catch (err) {
                 setState({ authError: err.message, authLoading: false });
             }
@@ -234,7 +226,6 @@
             if (!state.user) return;
             
             try {
-                // Load user profile
                 const { data: profile, error: profileError } = await supabase
                     .from('profiles')
                     .select('*')
@@ -245,7 +236,6 @@
                     console.error('Profile load error:', profileError);
                 }
                 
-                // Load user beaches
                 const { data: beaches, error: beachesError } = await supabase
                     .from('user_beaches')
                     .select('beach_slug, position')
@@ -259,7 +249,6 @@
                 const userBeaches = beaches?.map(b => b.beach_slug) || [];
                 
                 if (userBeaches.length === 0) {
-                    // New user - show onboarding
                     await loadAvailableBeaches();
                     setState({ 
                         userProfile: profile,
@@ -268,7 +257,6 @@
                         view: 'onboarding'
                     });
                 } else {
-                    // Existing user - show dashboard
                     setState({ 
                         userProfile: profile,
                         userBeaches: userBeaches,
@@ -297,13 +285,11 @@
             if (!state.user) return;
             
             try {
-                // Delete existing beaches
                 await supabase
                     .from('user_beaches')
                     .delete()
                     .eq('user_id', state.user.id);
                 
-                // Insert new beaches
                 const inserts = beaches.map((slug, index) => ({
                     user_id: state.user.id,
                     beach_slug: slug,
@@ -337,19 +323,20 @@
             const beaches = state.userBeaches.length > 0 ? state.userBeaches : DEFAULT_BEACHES;
             
             try {
-                const url = `${API_BASE}/dashboard?beaches=${beaches.join(',')}&mode=${state.mode}&time=${state.time}`;
-                const res = await fetch(url);
+                const res = await fetch(
+                    `${API_BASE}/dashboard?beaches=${beaches.join(',')}&mode=${state.mode}&time=${state.time}`
+                );
                 
-                if (!res.ok) {
-                    throw new Error(`API returned ${res.status}: ${res.statusText}`);
-                }
+                if (!res.ok) throw new Error('Failed to fetch data');
                 
                 const data = await res.json();
-                const newTimeSlots = data.meta?.availableTimeSlots || state.timeSlots;
                 
-                setState({ data, loading: false, timeSlots: newTimeSlots });
+                setState({ 
+                    data,
+                    loading: false,
+                    timeSlots: data.meta?.availableTimeSlots || FALLBACK_TIME_SLOTS
+                });
             } catch (err) {
-                console.error('API failed:', err.message);
                 setState({ error: err.message, loading: false });
             }
         }
@@ -358,10 +345,9 @@
         // HELPER FUNCTIONS
         // ============================================
 
-        function getUpdateText() {
-            if (!state.data?.meta) return '';
-            if (state.data.meta.isForecast) return `forecast for ${state.data.meta.timeLabel}`;
-            const mins = Math.round((Date.now() - new Date(state.data.meta.updatedAt)) / 60000);
+        function getTimeSince(isoString) {
+            if (!isoString) return '';
+            const mins = Math.floor((Date.now() - new Date(isoString)) / 60000);
             return mins < 1 ? 'updated just now' : `updated ${mins}m ago`;
         }
 
@@ -391,16 +377,102 @@
             return colors[status] || { badge: 'bg-gray-400', border: 'border-l-gray-400', bg: 'from-gray-50 to-gray-100' };
         }
 
+        // Get unique locations for filtering (NEW)
+        function getUniqueLocations() {
+            const locations = state.availableBeaches.map(b => b.location);
+            return [...new Set(locations)].sort();
+        }
+
+        // Updated to support location filter (UPDATED)
         function getFilteredBeaches(searchTerm = '') {
             const search = searchTerm.toLowerCase();
-            return state.availableBeaches.filter(b => 
-                b.name.toLowerCase().includes(search) || 
-                b.location.toLowerCase().includes(search)
-            );
+            return state.availableBeaches.filter(b => {
+                // Apply location filter first
+                if (state.locationFilter && b.location !== state.locationFilter) {
+                    return false;
+                }
+                // Then apply search filter
+                return b.name.toLowerCase().includes(search) || 
+                       b.location.toLowerCase().includes(search);
+            });
+        }
+
+        // Set location filter (NEW)
+        function setLocationFilter(location) {
+            const newFilter = state.locationFilter === location ? null : location;
+            setState({ locationFilter: newFilter });
+            updateAllBeachesDisplay();
+        }
+
+        // Update all beaches display without full re-render (NEW)
+        function updateAllBeachesDisplay() {
+            const searchInput = document.getElementById('all-beaches-search');
+            const searchValue = searchInput ? searchInput.value : '';
+            const filtered = getFilteredBeaches(searchValue);
+            
+            // Update location buttons
+            const locationButtons = document.querySelectorAll('[data-location-filter]');
+            locationButtons.forEach(btn => {
+                const loc = btn.getAttribute('data-location-filter');
+                if (loc === state.locationFilter) {
+                    btn.className = 'px-3 py-1.5 text-sm rounded-full border transition-all bg-indigo-600 text-white border-indigo-600';
+                } else {
+                    btn.className = 'px-3 py-1.5 text-sm rounded-full border transition-all bg-white text-gray-700 border-gray-200 hover:border-indigo-300';
+                }
+            });
+            
+            // Update "All" button
+            const allBtn = document.getElementById('location-filter-all');
+            if (allBtn) {
+                if (state.locationFilter === null) {
+                    allBtn.className = 'px-3 py-1.5 text-sm rounded-full border transition-all bg-indigo-600 text-white border-indigo-600';
+                } else {
+                    allBtn.className = 'px-3 py-1.5 text-sm rounded-full border transition-all bg-white text-gray-700 border-gray-200 hover:border-indigo-300';
+                }
+            }
+            
+            // Update beach list
+            const container = document.getElementById('all-beaches-list');
+            if (!container) return;
+            
+            container.innerHTML = filtered.length === 0 ? `
+                <div class="col-span-2 text-center text-gray-500 py-8">
+                    no beaches found ${state.locationFilter ? `in ${state.locationFilter}` : ''}
+                </div>
+            ` : filtered.map(beach => `
+                <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer"
+                     onclick="handleBeachClick('${beach.slug}')">
+                    <div class="font-medium text-gray-900">${beach.name}</div>
+                    <div class="text-sm text-gray-500">${beach.location}</div>
+                    <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
+                </div>
+            `).join('');
+            
+            // Update count
+            const countDisplay = document.getElementById('beach-count-display');
+            if (countDisplay) {
+                countDisplay.textContent = `showing ${filtered.length} of ${state.availableBeaches.length} beaches`;
+            }
+        }
+
+        // Handle beach click in all beaches view (NEW)
+        function handleBeachClick(slug) {
+            const beach = state.availableBeaches.find(b => b.slug === slug);
+            if (!beach) return;
+            
+            if (!state.selectedBeaches.includes(slug) && state.userBeaches.length < MAX_FREE_BEACHES) {
+                if (confirm(`Add ${beach.name} to your saved beaches?`)) {
+                    const newBeaches = [...state.userBeaches, slug];
+                    saveUserBeaches(newBeaches);
+                }
+            } else if (state.userBeaches.includes(slug)) {
+                alert(`${beach.name} is already in your saved beaches!`);
+            } else {
+                alert(`You've reached the maximum of ${MAX_FREE_BEACHES} beaches. Remove one to add ${beach.name}.`);
+            }
         }
 
         function updateBeachSearch(value) {
-            // Update beach list without triggering full re-render
             const container = document.getElementById('beach-list-container');
             if (!container) return;
             
@@ -463,42 +535,21 @@
 
         function toggleBeachSelection(slug) {
             const selected = state.selectedBeaches;
+            
             if (selected.includes(slug)) {
                 setState({ selectedBeaches: selected.filter(s => s !== slug) });
             } else if (selected.length < MAX_FREE_BEACHES) {
                 setState({ selectedBeaches: [...selected, slug] });
             }
-            
-            // Update the beach list to reflect selection without losing search input
-            const searchInput = document.getElementById('beach-search-input');
-            if (searchInput) {
-                updateBeachSearch(searchInput.value);
-            }
-        }
-
-        function startEditingBeaches() {
-            loadAvailableBeaches().then(() => {
-                setState({ 
-                    selectedBeaches: [...state.userBeaches], // Pre-select current beaches
-                    view: 'onboarding'
-                });
-            });
-        }
-
-        function completeOnboarding() {
-            if (state.selectedBeaches.length === 0) {
-                alert('Please select at least one beach');
-                return;
-            }
-            saveUserBeaches(state.selectedBeaches);
         }
 
         function removeBeach(slug) {
             setState({ selectedBeaches: state.selectedBeaches.filter(s => s !== slug) });
-            const searchInput = document.getElementById('beach-search-input');
-            if (searchInput) {
-                updateBeachSearch(searchInput.value);
-            }
+        }
+
+        function completeOnboarding() {
+            if (state.selectedBeaches.length === 0) return;
+            saveUserBeaches(state.selectedBeaches);
         }
 
         // ============================================
@@ -530,17 +581,14 @@
             const newOrder = [...state.selectedBeaches];
             const draggedItem = newOrder[draggedIndex];
             
-            // Remove from old position
             newOrder.splice(draggedIndex, 1);
-            
-            // Insert at new position
             newOrder.splice(dropIndex, 0, draggedItem);
             
             setState({ selectedBeaches: newOrder });
         }
 
         // ============================================
-        // RENDER FUNCTIONS - SIDEBAR MENU
+        // RENDER FUNCTIONS - SIDEBAR
         // ============================================
 
         function renderSidebar() {
@@ -558,13 +606,10 @@
             ];
             
             return `
-                <!-- Overlay -->
                 <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-40" onclick="toggleSidebar()"></div>
                 
-                <!-- Sidebar -->
                 <div class="fixed top-0 right-0 h-full w-80 bg-white shadow-2xl z-50 overflow-y-auto">
                     <div class="p-6">
-                        <!-- Header -->
                         <div class="flex items-center justify-between mb-8">
                             <h2 class="text-2xl font-light text-gray-900">menu</h2>
                             <button onclick="toggleSidebar()" 
@@ -573,7 +618,6 @@
                             </button>
                         </div>
                         
-                        <!-- User Info -->
                         ${state.user ? `
                             <div class="mb-8 p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl">
                                 <p class="text-sm text-gray-500 mb-1">signed in as</p>
@@ -581,13 +625,12 @@
                             </div>
                         ` : ''}
                         
-                        <!-- Menu Items -->
                         <nav class="space-y-1">
                             ${menuItems.filter(item => item.show).map(item => `
                                 <button 
                                     onclick="navigateTo('${item.view}')"
                                     class="w-full flex items-center gap-3 px-4 py-3 rounded-xl text-gray-700 hover:bg-gray-50 transition-all ${
-                                        state.view === item.view ? 'bg-indigo-50 text-indigo-600 font-medium' : ''
+                                        state.view === item.view ? 'bg-gray-900 text-white shadow-lg' : ''
                                     }">
                                     <span class="text-xl">${item.icon}</span>
                                     <span>${item.label}</span>
@@ -595,16 +638,6 @@
                             `).join('')}
                         </nav>
                         
-                        <!-- Support Link -->
-                        <div class="mt-8 pt-8 border-t border-gray-200">
-                            <a href="https://ko-fi.com/shorecast" target="_blank"
-                                class="flex items-center justify-center gap-2 w-full py-3 bg-gradient-to-r from-pink-500 to-orange-500 text-white rounded-xl font-medium hover:opacity-90 transition-all">
-                                <span>☕</span>
-                                <span>buy us a coffee</span>
-                            </a>
-                        </div>
-                        
-                        <!-- Sign Out -->
                         ${state.user ? `
                             <button onclick="signOut()" 
                                 class="w-full mt-4 py-3 text-gray-500 hover:text-gray-700 text-sm">
@@ -612,7 +645,6 @@
                             </button>
                         ` : ''}
                         
-                        <!-- Footer -->
                         <div class="mt-8 pt-8 border-t border-gray-200 text-center">
                             <p class="text-xs text-gray-400 mb-3">made in South Wales 🏴󠁧󠁢󠁷󠁬󠁳󠁿</p>
                             <div class="flex justify-center gap-3 text-xs">
@@ -658,24 +690,22 @@
                             <h2 class="text-xl font-medium text-gray-900 mb-6">welcome back</h2>
                             
                             ${state.authError ? `
-                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                                    ${state.authError}
                                 </div>
                             ` : ''}
                             
-                            <form onsubmit="handleLogin(event)" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                            <form onsubmit="handleLogin(event)">
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
                                     <input type="email" id="login-email" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                        placeholder="you@example.com">
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">password</label>
+                                <div class="mb-6">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">password</label>
                                     <input type="password" id="login-password" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                        placeholder="••••••••">
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
                                 <button type="submit" 
@@ -687,7 +717,7 @@
                             
                             <div class="mt-4 text-center">
                                 <button onclick="setState({ view: 'forgot-password', authError: null })" 
-                                    class="text-sm text-indigo-600 hover:text-indigo-700">
+                                    class="text-sm text-gray-500 hover:text-indigo-600">
                                     forgot password?
                                 </button>
                             </div>
@@ -717,32 +747,32 @@
                             <h2 class="text-xl font-medium text-gray-900 mb-6">create account</h2>
                             
                             ${state.authError ? `
-                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                                    ${state.authError}
                                 </div>
                             ` : ''}
                             
-                            <form onsubmit="handleSignup(event)" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                            <form onsubmit="handleSignup(event)">
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
                                     <input type="email" id="signup-email" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                        placeholder="you@example.com">
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">password</label>
+                                <div class="mb-4">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">password</label>
                                     <input type="password" id="signup-password" required minlength="6"
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                        placeholder="••••••••">
-                                    <p class="text-xs text-gray-500 mt-1">minimum 6 characters</p>
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                                    <p class="text-xs text-gray-400 mt-1">at least 6 characters</p>
                                 </div>
                                 
-                                <div class="flex items-start">
-                                    <input type="checkbox" id="signup-marketing" 
-                                        class="mt-1 w-4 h-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500">
-                                    <label for="signup-marketing" class="ml-2 text-sm text-gray-600">
-                                        send me occasional updates about new features
+                                <div class="mb-6">
+                                    <label class="flex items-start gap-3 cursor-pointer">
+                                        <input type="checkbox" id="signup-marketing" 
+                                            class="mt-1 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                        <span class="text-sm text-gray-600">
+                                            send me updates about new features and swimming tips (optional)
+                                        </span>
                                     </label>
                                 </div>
                                 
@@ -785,21 +815,16 @@
                             <h2 class="text-xl font-medium text-gray-900 mb-6">forgot password</h2>
                             
                             ${state.authError ? `
-                                <div class="bg-red-50 border border-red-200 rounded-xl p-4 mb-6">
-                                    <p class="text-red-600 text-sm">${state.authError}</p>
+                                <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                                    ${state.authError}
                                 </div>
                             ` : ''}
                             
-                            <p class="text-gray-600 text-sm mb-6">
-                                enter your email and we'll send you a link to reset your password
-                            </p>
-                            
-                            <form onsubmit="handleResetPassword(event)" class="space-y-4">
-                                <div>
-                                    <label class="block text-sm font-medium text-gray-700 mb-1">email</label>
+                            <form onsubmit="handleResetPassword(event)">
+                                <div class="mb-6">
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
                                     <input type="email" id="reset-email" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all"
-                                        placeholder="you@example.com">
+                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
                                 <button type="submit" 
@@ -810,8 +835,9 @@
                             </form>
                             
                             <p class="mt-6 text-center text-sm text-gray-500">
+                                remember your password? 
                                 <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                    back to sign in
+                                    sign in
                                 </button>
                             </p>
                         </div>
@@ -880,9 +906,13 @@
             `;
         }
 
+        // ============================================
+        // RENDER FUNCTIONS - ONBOARDING
+        // ============================================
+
         function renderOnboarding() {
             const filtered = getFilteredBeaches();
-            const isEditing = state.userBeaches.length > 0; // True if user already has beaches
+            const isEditing = state.userBeaches.length > 0;
             
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
@@ -941,10 +971,9 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-6">
-                            <div class="flex items-center justify-between mb-4">
-                                <span class="text-gray-600">selected beaches</span>
-                                <span class="text-gray-900 font-medium">${state.selectedBeaches.length}/${MAX_FREE_BEACHES}</span>
-                            </div>
+                            <h3 class="text-sm font-medium text-gray-700 mb-4">
+                                selected beaches (${state.selectedBeaches.length}/${MAX_FREE_BEACHES})
+                            </h3>
                             
                             ${state.selectedBeaches.length > 0 ? `
                                 <div class="mb-4 space-y-2" id="selected-beaches-list">
@@ -997,7 +1026,7 @@
         }
 
         // ============================================
-        // RENDER FUNCTIONS - DASHBOARD VIEWS
+        // RENDER FUNCTIONS - DASHBOARD
         // ============================================
 
         function renderTimeSlots() {
@@ -1029,7 +1058,6 @@
                         </span>
 
                         ${(() => {
-                            // Show sunrise for ALL beaches during morning slots (safety feature)
                             const isMorningSlot = state.time === 'now' || state.time === 'tomorrow-am' || state.time === 'day-after-am';
                             const showSunrise = isMorningSlot && beach.sun?.sunrise;
                             
@@ -1044,11 +1072,8 @@
                         })()}
                         
                         ${(() => {
-                            // Show sunset for ALL beaches during evening slots (safety feature)
                             const isEveningSlot = state.time === 'tonight' || state.time === 'tomorrow-pm';
                             const showSunset = isEveningSlot && beach.sun?.sunset;
-                            
-                            // Check if sunrise is also showing (only for edge case of "now" during dawn)
                             const isMorningSlot = state.time === 'now' || state.time === 'tomorrow-am' || state.time === 'day-after-am';
                             const sunriseShowing = isMorningSlot && beach.sun?.sunrise;
                             
@@ -1061,115 +1086,74 @@
                             }
                             return '';
                         })()}
-
-                        <div class="absolute bottom-4 left-4 right-4 text-white">
-                            <h2 class="text-2xl md:text-3xl font-light mb-1">${beach.name}</h2>
-                            <div class="flex items-center gap-2 text-sm opacity-90">
+                        
+                        <div class="absolute bottom-4 left-4 right-4">
+                            <h3 class="text-2xl font-light text-white mb-1">${beach.name}</h3>
+                            <div class="flex items-center gap-2 text-white/80 text-sm">
                                 <span>${beach.location}</span>
-                                ${beach.facing ? `
-                                    <span class="bg-white/20 backdrop-blur-sm px-2 py-0.5 rounded text-xs">
-                                        ${ARROWS[beach.facing]} ${beach.facing}
-                                    </span>
-                                ` : ''}
+                                <span class="bg-white/20 px-2 py-0.5 rounded-full text-xs backdrop-blur-sm">
+                                    ${ARROWS[beach.facing] || '→'} 🏖️ ${beach.facing}
+                                </span>
                             </div>
                         </div>
                     </div>
-
+                    
                     <div class="p-5">
-                        <div class="grid grid-cols-3 md:grid-cols-5 gap-2 mb-4">
-                            <!-- Water temp - both modes -->
-                            <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                <div class="text-xl font-medium text-gray-900">${beach.seaTempDisplay}</div>
-                                <div class="text-xs text-gray-500 mt-1">water</div>
-                            </div>
-                            
-                            <!-- Feels like - both modes -->
-                            <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                <div class="text-xl font-medium text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</div>
-                                <div class="text-xs text-gray-500 mt-1">feels like</div>
-                            </div>
-                            
-                            <!-- Tides - both modes -->
-                            <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                <div class="flex justify-center gap-2">
-                                    <div>
-                                        <div class="text-base font-medium text-gray-900">${beach.tide?.high || '—'}</div>
-                                        <div class="text-xs text-gray-500">high</div>
-                                    </div>
-                                    <div class="text-gray-300">|</div>
-                                    <div>
-                                        <div class="text-base font-medium text-gray-900">${beach.tide?.low || '—'}</div>
-                                        <div class="text-xs text-gray-500">low</div>
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            <!-- Mode-specific stat -->
+                        <div class="grid grid-cols-4 gap-4 mb-4">
                             ${state.mode === 'swimming' ? `
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.waves?.heightDisplay || '—'}</div>
-                                    <div class="text-xs text-gray-500 mt-1">waves</div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">water</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.seaTempDisplay || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">waves</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.waves?.heightDisplay || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">high tide</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.tide?.high || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">status</p>
+                                    <p class="text-lg font-semibold text-gray-900">
+                                        ${beach.sewage?.icon || '?'}
+                                        <button onclick="setState({ showInfo: '${beach.slug}' })" class="ml-1 text-gray-400 hover:text-indigo-600 text-xs">ⓘ</button>
+                                    </p>
                                 </div>
                             ` : `
-                                <div class="text-center p-3 bg-gray-50 rounded-xl">
-                                    <div class="text-xl font-medium text-gray-900">${beach.weather?.airTempDisplay || '—'}</div>
-                                    <div class="text-xs text-gray-500 mt-1">air</div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">water</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.seaTempDisplay || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">feels like</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">air</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.weather?.airTempDisplay || '—'}</p>
+                                </div>
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">status</p>
+                                    <p class="text-lg font-semibold text-gray-900">
+                                        ${beach.sewage?.icon || '?'}
+                                        <button onclick="setState({ showInfo: '${beach.slug}' })" class="ml-1 text-gray-400 hover:text-indigo-600 text-xs">ⓘ</button>
+                                    </p>
                                 </div>
                             `}
-                            
-                            <!-- Status - both modes -->
-                            <div class="text-center p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors cursor-pointer" onclick="setState({ showInfo: '${beach.slug}' })">
-                                <div class="text-xl font-medium text-gray-900">${beach.sewage?.icon || '?'}</div>
-                                <div class="text-xs text-gray-500 flex items-center justify-center gap-1 mt-1">
-                                    status
-                                    <span class="w-4 h-4 bg-gray-300 hover:bg-indigo-500 text-white rounded-full text-xs flex items-center justify-center">i</span>
-                                </div>
-                            </div>
                         </div>
-
+                        
                         ${beach.isForecast ? `
-                            <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
-                                forecast
-                            </span>
-                        ` : ''}
-
-                        ${rec.bestWindow ? `
-                            <span class="inline-block bg-indigo-50 text-indigo-600 text-xs font-semibold px-3 py-1 rounded-lg mb-3 border border-indigo-100">
-                                best window: ${rec.bestWindow.start} – ${rec.bestWindow.end}
-                            </span>
-                        ` : ''}
-
-                        ${beach.alerts?.jellyfish || beach.alerts?.recentRainfall || beach.alerts?.bathingWaterQuality ? `
-                            <div class="flex flex-wrap gap-2 mb-3">
-                                ${beach.alerts.jellyfish ? `
-                                    <span class="inline-flex items-center gap-1 bg-purple-50 text-purple-600 text-xs font-medium px-2.5 py-1 rounded-lg border border-purple-100">
-                                        <span>🪼</span> ${beach.alerts.jellyfishSpecies || 'jellyfish'} reported nearby
-                                    </span>
-                                ` : ''}
-                                ${beach.alerts.recentRainfall ? `
-                                    <span class="inline-flex items-center gap-1 bg-blue-50 text-blue-600 text-xs font-medium px-2.5 py-1 rounded-lg border border-blue-100">
-                                        <span>🌧️</span> recent rainfall
-                                    </span>
-                                ` : ''}
-                                ${beach.alerts.bathingWaterQuality ? `
-                                    <span class="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-lg border
-                                        ${beach.alerts.bathingWaterQuality === 'excellent' ? 'bg-emerald-50 text-emerald-600 border-emerald-100' :
-                                          beach.alerts.bathingWaterQuality === 'good' ? 'bg-green-50 text-green-600 border-green-100' :
-                                          beach.alerts.bathingWaterQuality === 'sufficient' ? 'bg-yellow-50 text-yellow-600 border-yellow-100' :
-                                          'bg-red-50 text-red-600 border-red-100'}">
-                                        <span>🧪</span> ${beach.alerts.bathingWaterQuality}
-                                    </span>
-                                ` : ''}
+                            <div class="mb-3">
+                                <span class="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded-full">forecast</span>
                             </div>
                         ` : ''}
-
-                        <div class="p-4 rounded-xl bg-gradient-to-r ${colors.bg} border-l-4 ${colors.border}">
-                            <p class="text-gray-600 text-sm leading-relaxed">${formatRecommendation(rec.windowRecommendation || rec.recommendation)}</p>
+                        
+                        <div class="bg-gradient-to-r ${colors.bg} rounded-xl p-4 border-l-4 ${colors.border}">
+                            <p class="text-sm text-gray-700 leading-relaxed">
+                                ${formatRecommendation(rec.recommendation)}
+                            </p>
                         </div>
-
-                        ${beach.sewage?.source ? `
-                            <p class="text-xs text-gray-400 mt-2">data: ${beach.sewage.source}</p>
-                        ` : ''}
                     </div>
                 </div>
             `;
@@ -1178,78 +1162,45 @@
         function renderInfoModal() {
             if (!state.showInfo) return '';
             
+            const beach = state.data?.beaches?.find(b => b.slug === state.showInfo);
+            if (!beach) return '';
+            
             return `
-                <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50" onclick="setState({ showInfo: null })"></div>
-                <div class="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-white rounded-2xl shadow-2xl max-w-md w-11/12 p-6 z-50 max-h-[85vh] overflow-y-auto">
-                    <button onclick="setState({ showInfo: null })" class="absolute top-3 right-3 w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center text-lg">×</button>
-                    
-                    <h3 class="text-xl font-medium text-gray-900 mb-5">what goes into our recommendation</h3>
-                    
-                    <div class="mb-5">
-                        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">sewage monitoring</h4>
-                        <div class="space-y-2 text-sm text-gray-600">
-                            <p><span class="inline-block w-6 text-center font-bold text-emerald-600">✓</span> <strong>clear</strong> — no recent discharge, or cleared based on beach type</p>
-                            <p><span class="inline-block w-6 text-center font-bold text-amber-500">!</span> <strong>caution</strong> — recent discharge, water clearing</p>
-                            <p><span class="inline-block w-6 text-center font-bold text-red-500">✗</span> <strong>active</strong> — currently discharging or very recent</p>
-                            <p><span class="inline-block w-6 text-center font-bold text-gray-400">?</span> <strong>unknown</strong> — monitoring data unavailable</p>
+                <div class="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" onclick="setState({ showInfo: null })">
+                    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl" onclick="event.stopPropagation()">
+                        <div class="flex items-center justify-between mb-4">
+                            <h3 class="text-lg font-medium text-gray-900">${beach.name} - water quality</h3>
+                            <button onclick="setState({ showInfo: null })" class="text-gray-400 hover:text-gray-600 text-2xl">×</button>
                         </div>
                         
-                        <div class="mt-4 p-3 bg-indigo-50 rounded-lg border border-indigo-100">
-                            <p class="text-xs font-medium text-gray-800 mb-2">🧠 smart clearance windows</p>
-                            <p class="text-xs text-gray-600 leading-relaxed">
-                                We adjust clearance times based on beach type. Urban beaches with UV treatment and regular testing (like Barry Island, Penarth) show clear after 24 hours. Remote beaches with minimal infrastructure (like Rhossili, Barafundle) wait 48 hours. This reflects real-world safety while staying cautious.
-                            </p>
-                        </div>
-                    </div>
-                    
-                    <div class="border-t border-gray-100 my-4"></div>
-                    
-                    <div class="mb-5">
-                        <h4 class="text-sm font-semibold text-gray-700 uppercase tracking-wide mb-3">additional factors</h4>
-                        <div class="space-y-3 text-sm text-gray-600">
-                            <div class="flex gap-3">
-                                <span class="text-lg">🪼</span>
-                                <div>
-                                    <p class="font-medium text-gray-800">jellyfish sightings</p>
-                                    <p class="text-gray-500">based on recent reports near this beach</p>
+                        <div class="space-y-4">
+                            <div class="p-4 bg-gray-50 rounded-xl">
+                                <p class="text-sm font-medium text-gray-700 mb-2">sewage status</p>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-2xl">${beach.sewage?.icon || '?'}</span>
+                                    <span class="text-gray-600">${beach.sewage?.status || 'unknown'}</span>
+                                </div>
+                                <p class="text-xs text-gray-500 mt-2">Source: ${beach.sewage?.source || 'Water company'}</p>
+                            </div>
+                            
+                            <div class="p-4 bg-gray-50 rounded-xl">
+                                <p class="text-sm font-medium text-gray-700 mb-2">what the icons mean</p>
+                                <div class="space-y-2 text-sm text-gray-600">
+                                    <p><span class="text-green-600 font-bold">✓</span> Clear - no discharge in 48 hours</p>
+                                    <p><span class="text-amber-600 font-bold">!</span> Caution - discharge ended 24-48 hours ago</p>
+                                    <p><span class="text-red-600 font-bold">✗</span> Active - currently discharging</p>
+                                    <p><span class="text-gray-600 font-bold">?</span> Unknown - data unavailable</p>
                                 </div>
                             </div>
-                            <div class="flex gap-3">
-                                <span class="text-lg">🧪</span>
-                                <div>
-                                    <p class="font-medium text-gray-800">bathing water quality</p>
-                                    <p class="text-gray-500">environment agency testing may-september</p>
-                                </div>
-                            </div>
-                            <div class="flex gap-3">
-                                <span class="text-lg">🌧️</span>
-                                <div>
-                                    <p class="font-medium text-gray-800">recent rainfall</p>
-                                    <p class="text-gray-500">heavy rain affects water quality</p>
+                            
+                            <div class="p-4 bg-gray-50 rounded-xl">
+                                <p class="text-sm font-medium text-gray-700 mb-2">other factors</p>
+                                <div class="space-y-2 text-sm text-gray-600">
+                                    <p>🪼 Jellyfish: ${beach.alerts?.jellyfish ? 'Seasonal risk' : 'No reports'}</p>
+                                    <p>🌧️ Recent rainfall: ${beach.alerts?.recentRainfall ? 'May affect water quality' : 'None'}</p>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    
-                    <div class="border-t border-gray-100 my-4"></div>
-                    
-                    <div class="text-xs text-gray-400 leading-relaxed">
-                        <p class="mb-2 font-medium text-gray-500">data sources & attribution</p>
-                        
-                        <p class="mb-2">
-                            <strong class="text-gray-600">Tides:</strong> Contains ADMIRALTY® tidal data: © Crown copyright and database right
-                        </p>
-                        
-                        <p class="mb-2">
-                            <strong class="text-gray-600">Weather & waves:</strong> Weather data by 
-                            <a href="https://open-meteo.com/" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">Open-Meteo.com</a>
-                        </p>
-                        
-                        <p class="mb-2">
-                            <strong class="text-gray-600">Sewage:</strong> UK water companies (Welsh Water, South West Water, Southern Water, Wessex Water)
-                        </p>
-                        
-                        <p class="text-gray-400 mt-3">Data updated every 15 minutes</p>
                     </div>
                 </div>
             `;
@@ -1258,15 +1209,22 @@
         function renderDashboard() {
             return `
                 <div class="max-w-5xl mx-auto px-4 py-8 fade-in">
-                    <header class="mb-8">
-                        <div class="flex items-start justify-between mb-4">
-                            <div>
-                                <h1 class="text-4xl md:text-5xl font-light text-gray-900 mb-2">your beaches</h1>
-                                <p class="text-gray-400 text-sm">${getUpdateText()}</p>
-                            </div>
-                            <!-- Menu Button -->
+                    <div class="flex items-start justify-between mb-6">
+                        <div>
+                            <h1 class="text-3xl md:text-4xl font-light text-gray-900 mb-1">your beaches</h1>
+                            <p class="text-gray-500 text-sm">
+                                ${state.data?.meta?.isForecast 
+                                    ? `forecast for ${state.data.meta.timeLabel}` 
+                                    : getTimeSince(state.data?.meta?.updatedAt)}
+                            </p>
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <button onclick="setState({ selectedBeaches: [...state.userBeaches] }); loadAvailableBeaches(); setState({ view: 'onboarding' })" 
+                                class="px-4 py-2 text-sm text-gray-600 hover:text-indigo-600 border border-gray-200 rounded-xl hover:border-indigo-300 transition-all">
+                                manage beaches
+                            </button>
                             <button onclick="toggleSidebar()" 
-                                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50 transition-all">
+                                class="w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
                                 <div class="w-5 flex flex-col gap-1">
                                     <div class="h-0.5 bg-gray-600 rounded"></div>
                                     <div class="h-0.5 bg-gray-600 rounded"></div>
@@ -1274,21 +1232,29 @@
                                 </div>
                             </button>
                         </div>
-                    </header>
-
-                    <div class="flex gap-2 mb-6 overflow-x-auto pb-2">
+                    </div>
+                    
+                    <div class="flex gap-3 mb-6 overflow-x-auto pb-2 scrollbar-hide">
                         ${renderTimeSlots()}
                     </div>
-
-                    <div class="flex gap-3 mb-8">
-                        ${['swimming', 'dipping'].map(m => `
-                            <button onclick="setState({ mode: '${m}' }); fetchData();"
-                                class="flex-1 py-3 rounded-xl font-medium transition-all ${
-                                    state.mode === m ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
-                                }">
-                                ${m}
-                            </button>
-                        `).join('')}
+                    
+                    <div class="flex gap-2 mb-8">
+                        <button onclick="setState({ mode: 'swimming' }); fetchData();" 
+                            class="flex-1 py-3 rounded-xl font-medium transition-all ${
+                                state.mode === 'swimming' 
+                                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' 
+                                    : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
+                            }">
+                            🏊 swimming
+                        </button>
+                        <button onclick="setState({ mode: 'dipping' }); fetchData();" 
+                            class="flex-1 py-3 rounded-xl font-medium transition-all ${
+                                state.mode === 'dipping' 
+                                    ? 'bg-gradient-to-r from-indigo-500 to-purple-600 text-white shadow-lg' 
+                                    : 'bg-white border border-gray-200 text-gray-500 hover:border-gray-300'
+                            }">
+                            🧊 dipping
+                        </button>
                     </div>
 
                     ${state.loading ? `
@@ -1343,7 +1309,102 @@
         }
 
         // ============================================
-        // RENDER FUNCTIONS - ADDITIONAL PAGES
+        // RENDER FUNCTIONS - ALL BEACHES (UPDATED)
+        // ============================================
+
+        function renderAllBeaches() {
+            const locations = getUniqueLocations();
+            const filtered = getFilteredBeaches();
+            
+            return `
+                <div class="min-h-screen py-12 px-4 fade-in">
+                    <div class="max-w-4xl mx-auto">
+                        <div class="mb-6">
+                            <button onclick="navigateTo('dashboard')" 
+                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
+                                ← back to dashboard
+                            </button>
+                            <button onclick="toggleSidebar()" 
+                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
+                                <div class="w-5 flex flex-col gap-1">
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                    <div class="h-0.5 bg-gray-600 rounded"></div>
+                                </div>
+                            </button>
+                        </div>
+                        
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-2">all beaches</h1>
+                            <p class="text-gray-500 mb-6" id="beach-count-display">
+                                showing ${filtered.length} of ${state.availableBeaches.length} beaches
+                            </p>
+                            
+                            <!-- Search Input -->
+                            <input type="text" 
+                                id="all-beaches-search"
+                                oninput="updateAllBeachesDisplay()"
+                                placeholder="search beaches..."
+                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all mb-4">
+                            
+                            <!-- Location Filter Chips (NEW) -->
+                            <div class="mb-6">
+                                <p class="text-sm text-gray-500 mb-3">filter by location:</p>
+                                <div class="flex flex-wrap gap-2">
+                                    <button 
+                                        id="location-filter-all"
+                                        onclick="setState({ locationFilter: null }); updateAllBeachesDisplay();"
+                                        class="px-3 py-1.5 text-sm rounded-full border transition-all ${
+                                            state.locationFilter === null 
+                                                ? 'bg-indigo-600 text-white border-indigo-600' 
+                                                : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300'
+                                        }">
+                                        all
+                                    </button>
+                                    
+                                    ${locations.map(loc => {
+                                        const count = state.availableBeaches.filter(b => b.location === loc).length;
+                                        const isActive = state.locationFilter === loc;
+                                        return `
+                                            <button 
+                                                data-location-filter="${loc}"
+                                                onclick="setLocationFilter('${loc}')"
+                                                class="px-3 py-1.5 text-sm rounded-full border transition-all ${
+                                                    isActive 
+                                                        ? 'bg-indigo-600 text-white border-indigo-600' 
+                                                        : 'bg-white text-gray-700 border-gray-200 hover:border-indigo-300'
+                                                }">
+                                                ${loc.toLowerCase()} <span class="opacity-60">(${count})</span>
+                                            </button>
+                                        `;
+                                    }).join('')}
+                                </div>
+                            </div>
+                            
+                            <!-- Beach Grid -->
+                            <div id="all-beaches-list" class="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
+                                ${filtered.length === 0 ? `
+                                    <div class="col-span-2 text-center text-gray-500 py-8">
+                                        no beaches found ${state.locationFilter ? `in ${state.locationFilter}` : ''}
+                                    </div>
+                                ` : filtered.map(beach => `
+                                    <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all cursor-pointer"
+                                         onclick="handleBeachClick('${beach.slug}')">
+                                        <div class="font-medium text-gray-900">${beach.name}</div>
+                                        <div class="text-sm text-gray-500">${beach.location}</div>
+                                        <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        </div>
+                    </div>
+                    ${renderSidebar()}
+                </div>
+            `;
+        }
+
+        // ============================================
+        // RENDER FUNCTIONS - OTHER PAGES
         // ============================================
 
         function renderAbout() {
@@ -1381,21 +1442,15 @@
                                     Now there's one place that brings it all together – and tells you what it means.
                                 </p>
                                 
-                                <h2 class="text-2xl font-light text-gray-900 mt-12 mb-4">what we do</h2>
-                                <p class="text-gray-600 leading-relaxed mb-4">
-                                    Shorecast pulls live data from tide stations, marine buoys, and water company monitors across Wales and England. Then we make sense of it for you with intelligent recommendations – not just raw numbers, but clear answers about when to swim.
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">what we cover</h2>
+                                <p class="text-gray-600 leading-relaxed mb-6">
+                                    99 beaches across Wales and Southwest England, from Anglesey to Brighton. We're adding more all the time.
                                 </p>
                                 
-                                <h2 class="text-2xl font-light text-gray-900 mt-12 mb-4">our mission</h2>
-                                <p class="text-gray-600 leading-relaxed mb-4">
-                                    If Shorecast helps you get in the water more often, we've done our job. Wild swimming should be simple, safe, and joyful.
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">our data</h2>
+                                <p class="text-gray-600 leading-relaxed mb-6">
+                                    Real-time information from UK Admiralty (tides), Open-Meteo (weather and waves), and water companies (sewage monitoring). Updated every 15 minutes.
                                 </p>
-                                
-                                <div class="mt-12 p-6 bg-gray-50 rounded-xl">
-                                    <p class="text-sm text-gray-500 mb-2">coverage</p>
-                                    <p class="text-gray-900 font-medium">99 beaches across Wales and Southwest England</p>
-                                    <p class="text-sm text-gray-500 mt-4">more regions coming soon</p>
-                                </div>
                             </div>
                         </div>
                     </div>
@@ -1405,9 +1460,17 @@
         }
 
         function renderFAQs() {
+            const faqs = [
+                { q: 'How often is the data updated?', a: 'Every 15 minutes for weather and marine conditions. Sewage data updates as soon as water companies report changes.' },
+                { q: 'What does the traffic light system mean?', a: 'Green = great conditions, go swim! Amber = check the details, some caution advised. Red = avoid, unsafe conditions.' },
+                { q: 'Why is dipping mode different from swimming?', a: 'Cold water dippers prefer colder water (it\'s the point!) and care more about wind chill for recovery. We flip the logic so colder = better.' },
+                { q: 'How accurate are the tide times?', a: 'Very accurate - we use official UK Admiralty data, the same source used by mariners.' },
+                { q: 'Can I add more than 3 beaches?', a: 'Currently the free tier supports 3 beaches. We\'re working on a premium tier with unlimited beaches.' }
+            ];
+            
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-4xl mx-auto">
+                    <div class="max-w-3xl mx-auto">
                         <div class="mb-6">
                             <button onclick="navigateTo('dashboard')" 
                                 class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
@@ -1424,419 +1487,16 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-3">frequently asked questions</h1>
-                            <p class="text-sm text-gray-500 mb-10">Updated 12 December 2025</p>
+                            <h1 class="text-4xl font-light text-gray-900 mb-8">frequently asked questions</h1>
                             
-                            <!-- What is Shorecast -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">What is Shorecast?</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what does shorecast actually do?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Shorecast tells you WHEN to swim, not just what the conditions are. Instead of checking four different apps and mentally synthesizing whether it's a good morning - we give you one clear answer in natural language: "perfect morning conditions, 8-10am is your window" or "avoid today, try monday instead."</p>
-                                            <p>We pull live data from tide stations, marine buoys, weather forecasts, and water company sewage monitors, then synthesize it all into intelligent recommendations with a simple traffic light system: green (great conditions), amber (check the details), or red (probably skip it).</p>
-                                        </div>
+                            <div class="space-y-6">
+                                ${faqs.map(faq => `
+                                    <div class="border-b border-gray-100 pb-6 last:border-0">
+                                        <h3 class="font-medium text-gray-900 mb-2">${faq.q}</h3>
+                                        <p class="text-gray-600">${faq.a}</p>
                                     </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why do I need this?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">If you're checking a tide app, then a weather app, then a sewage app, then trying to remember what the sunrise time is and whether that matters for your beach - that's 5-10 minutes every morning. Shorecast gives you the same answer in 30 seconds. One dashboard. All your beaches. Traffic lights showing which is best right now.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what makes shorecast different?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>We don't just show you the data - we tell you what it means. Instead of "water: 11°C, waves: 0.3m, tide: 09:15" we say: "lovely conditions. gentle rolling waves. clear skies. sunrise at 08:22 will be spectacular. barely any breeze. no sewage alerts. high tide 09:15, low 16:30."</p>
-                                            <p>The recommendation engine considers beach orientation, weather patterns, sewage status, temperature, waves, wind, UV, rainfall, and tide timing - then gives you natural language advice that feels like talking to a local swimmer who knows the beach.</p>
-                                        </div>
-                                    </div>
-                                </div>
+                                `).join('')}
                             </div>
-
-                            <!-- Getting Started -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Getting Started</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how much does it cost?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Free. Create an account, save up to 3 beaches, check conditions anytime. No payment required, no credit card, no trial period. If you find it helpful and want to support the project, you can <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">buy us a coffee on Ko-fi</a> - it helps keep the servers running.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how do I use shorecast?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Visit shorecast.co.uk and create an account. Choose your 3 favourite beaches, and you'll see your personal dashboard with traffic light recommendations for each. Switch between "swimming" and "dipping" modes depending on what you're planning. Check current conditions or tomorrow's forecast. Takes 30 seconds.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">do you have an app?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Not yet. Right now it's a web app that works beautifully on any device - phone, tablet, or computer. Bookmark it to your home screen and it works like an app. Native iOS and Android apps are on the roadmap once we validate there's demand for them.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">do I need to create an account?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Yes. We need to know which beaches you want to track so we can show you your personalized dashboard. Creating an account takes 30 seconds - just email and password. We'll send a confirmation email to verify it's really you, then you're in.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- How It Works -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">How It Works</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what's the dashboard?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Your personal home page. After you create an account, you choose up to 3 beaches (free tier). Every time you visit Shorecast, you'll see those beaches with traffic lights showing current conditions: green means go, amber means check the details, red means probably skip it. You can switch between time periods and modes. It's designed for one question: "which beach should I swim at today?"</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what's the traffic light system?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Simple visual decision-making. Each beach gets a colored badge:</p>
-                                            <div class="bg-gray-50 rounded-xl p-4 space-y-2 my-3">
-                                                <div class="flex items-center gap-3">
-                                                    <span class="w-4 h-4 rounded-full bg-emerald-500 flex-shrink-0"></span>
-                                                    <span><strong class="text-gray-900">Green:</strong> Great conditions. Go swim.</span>
-                                                </div>
-                                                <div class="flex items-center gap-3">
-                                                    <span class="w-4 h-4 rounded-full bg-amber-400 flex-shrink-0"></span>
-                                                    <span><strong class="text-gray-900">Amber:</strong> Check the details. Might be fine for you, might not.</span>
-                                                </div>
-                                                <div class="flex items-center gap-3">
-                                                    <span class="w-4 h-4 rounded-full bg-red-400 flex-shrink-0"></span>
-                                                    <span><strong class="text-gray-900">Red:</strong> Avoid. Unsafe conditions or active sewage.</span>
-                                                </div>
-                                            </div>
-                                            <p>Below the traffic light, we explain WHY in natural language.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what does "our recommendation" mean?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>We synthesize everything into advice. The recommendation engine considers sewage status, weather conditions (cloud cover, rain, wind, air temperature), wave height, tide timing, beach orientation (sunrise/sunset visibility), UV index, and recent rainfall.</p>
-                                            <p>Then we give you natural language: "lovely conditions. gentle rolling waves. partly cloudy. light breeze. no sewage alerts. high tide 09:15, low 16:30. water's 11°C - bring warm layers for afterwards."</p>
-                                            <p class="font-medium text-gray-700">Not just numbers. Actual advice.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I see tomorrow's forecast?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Yes. Use the time selector to switch between right now, tonight, tomorrow morning, tomorrow evening, and day after tomorrow. Check tonight whether tomorrow morning looks good, see the best swim window, set your alarm accordingly. Each time period gets fresh recommendations based on forecast data.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what's swimming vs dipping mode?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Two different activities with different needs:</p>
-                                            <p><strong class="text-gray-900">Swimming mode</strong> - for distance swimming, fitness, technique. Prefers calmer water, warmer temperatures. Shows water temp, wave height, tide times.</p>
-                                            <p><strong class="text-gray-900">Dipping mode</strong> - for cold water therapy, quick immersion (2-10 minutes), mental health. Prefers COLDER water (8°C is better than 12°C). Shows water temp, feels-like temp, air temp. Different language: "pure winter magic" vs "too mild for cold therapy."</p>
-                                            <p>Same beach, same time, completely different recommendations depending on what you're planning.</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Data & Accuracy -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Data & Accuracy</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how accurate is the data?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Tide predictions are extremely reliable - we use official UK Admiralty data, accurate within minutes. Sea temperature and wave data come from Open-Meteo's marine forecast models. Weather forecasts (cloud cover, rain, wind, UV) also come from Open-Meteo. Sewage alerts are as real-time as the water companies make them - usually updated within an hour of a discharge starting or stopping.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">which beaches are covered?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>99 beaches across Wales and England:</p>
-                                            <ul class="list-disc ml-6 space-y-1">
-                                                <li>Complete Welsh coast (Anglesey to Pembrokeshire to Cardiff)</li>
-                                                <li>Southwest England (Cornwall, Devon, Dorset)</li>
-                                                <li>Southeast England (Sussex - Brighton to Eastbourne)</li>
-                                            </ul>
-                                            <p>You can browse all locations from the menu. We're adding more regularly based on requests.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">do you cover all the water companies?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Partially. Welsh Water sewage monitoring is fully integrated and working (real-time discharge data for all Welsh beaches). English water companies (South West Water, Southern Water, Wessex Water) are coming soon - we're currently integrating with the National Storm Overflow Hub API.</p>
-                                            <p>Until then, English beaches show weather, tides, and marine conditions accurately - just not sewage status yet. We're honest about this limitation.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I trust the sewage data?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>For Welsh beaches, yes - we're pulling directly from Welsh Water's real-time monitoring system. The data updates continuously and we show you exactly what they're reporting: active discharge, recent discharge (with hours since it stopped), or clear.</p>
-                                            <p>The monitoring is a legal requirement and generally reliable, but systems can go offline or have delays. If data is unavailable, we'll show "status unknown" rather than guess.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how does beach orientation matter?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">East-facing beaches get spectacular sunrises on clear mornings. West-facing beaches get golden sunsets on clear evenings. If you're planning a dawn dip at an east-facing beach and the forecast shows clear skies, we'll tell you: "sunrise at 07:48 will be spectacular." If it's overcast, we'll just mention the time or note that it'll be hidden by cloud.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">does weather forecast affect the recommendation?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Absolutely. The same beach can be green in the morning (calm, clear skies, light breeze) and amber in the evening (wind picking up, clouds rolling in). Rain doesn't stop you swimming, but we'll mention it: "light rain expected - part of the experience" or "heavy rain forecast - changing will be soggy." Cloud cover affects sunrise/sunset visibility. Wind affects feels-like temperature. UV index tells you whether to bring sun cream.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Your Account -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Your Account</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how do I save favourite beaches?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Create an account at shorecast.co.uk (just email and password), then choose your beaches during onboarding. You can select up to 3 beaches on the free tier. These will be your dashboard - every time you log in, you'll see your beaches with current traffic lights. You can change them anytime from the profile page.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what's the free tier limit?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">3 beaches. That's enough for most people - usually you have 2-3 regular spots you swim at. If you want to save more, we'll introduce a premium tier eventually (unlimited beaches, longer forecasts, additional features).</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I change my saved beaches?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Yes. Go to your profile page and click "manage beaches". You can add, remove, or reorder them. Changes save instantly.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">will I get notifications?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Not yet. Push notifications (sewage alerts, ideal conditions at your beaches, tomorrow's forecast each evening) are planned for future native mobile apps. Right now it's web-only, so you check when you want to check.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Understanding Recommendations -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Understanding the Recommendations</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why is the same beach green for dipping but amber for swimming?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Because they're different activities with different needs. A 9°C morning might be:</p>
-                                            <div class="bg-gray-50 rounded-xl p-4 space-y-2 my-3">
-                                                <p><strong class="text-gray-900">Swimming:</strong> AMBER - "water's quite cold, short session recommended"</p>
-                                                <p><strong class="text-gray-900">Dipping:</strong> GREEN - "crisp and clarifying, proper cold therapy"</p>
-                                            </div>
-                                            <p>Dippers WANT cold water. Swimmers prefer it slightly warmer. The algorithm inverts for dipping mode - colder is better, up to a point. Same data, different recommendations.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what does "feels like" mean?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Wind chill calculation. If the air temperature is 8°C but there's a 20km/h wind, it might feel like 4°C outside. This matters for recovery after a cold dip - you need to know how quickly you'll cool down while changing. We show this for dipping mode to help you prepare the right layers.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why do you mention sunrise and sunset?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Because they matter. Swimming or dipping during sunrise on a clear morning is a completely different experience than swimming at midday. If you're heading to a west-facing beach in the evening and the forecast shows clear skies, you'll get golden hour in the water - worth knowing. We only mention it when it's relevant.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what if the recommendation is wrong?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Weather forecasts can be wrong, especially for cloud cover and precipitation. We use the best data available (Open-Meteo and UK Admiralty) but conditions can change. Tide times are extremely reliable. Sewage data is as accurate as the water companies make it. If you notice consistent inaccuracies at a specific beach, please let us know - it helps us improve.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why does it say "safe time: 3-5 minutes" for dipping?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Cold water immersion time guidance based on water temperature. At 8°C, 3-5 minutes is safe for most people before hypothermia risk increases significantly. At 10°C, you can stay 5-10 minutes. This is general guidance - your experience and cold tolerance may differ. We include this for dipping mode to help newer dippers understand safe exposure times.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Safety & Water Quality -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Safety & Water Quality</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what counts as "active sewage discharge"?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">An overflow currently releasing untreated wastewater into the sea. These are monitored in real-time by water companies (legal requirement). We pull that data directly and show you: active discharge (red ✗), recent discharge (amber !), or clear (green ✓). If a discharge stopped in the last 24-48 hours, we'll show amber and tell you when it ended.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why do you show "recent" sewage as amber instead of red?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Because water quality improves with time. A discharge that stopped 36 hours ago is different from one that stopped 4 hours ago. Some swimmers are comfortable after 24 hours, others wait 48+. We show amber and give you the details so you can decide based on your own comfort level. Different beaches have different clearance recommendations based on location and treatment systems.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what if I want to swim anyway?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">That's entirely your call. We give you the information and our recommendation, but you make the decision. Some people are comfortable swimming 24 hours after a discharge stops, others wait 48+ hours. Our job is to tell you what's happening so you can choose based on your own comfort level.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">are there other safety factors?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-2 text-sm">
-                                            <p>Yes. We consider UV index (sun cream recommendations), wind speed (offshore winds, safety concerns), wave height (dangerous swell warnings), feels-like temperature (hypothermia risk), and recent rainfall (water quality impact).</p>
-                                            <p class="text-xs text-gray-500">Coming soon: Jellyfish sightings (real data from NBN Atlas) and bathing water quality ratings (Environment Agency data).</p>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Coverage & Expansion -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Coverage & Expansion</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">which regions are covered?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p><strong class="text-gray-900">Wales:</strong> Complete coastal coverage - Anglesey, Llŷn Peninsula, Cardigan Bay, Pembrokeshire, Carmarthenshire, Gower Peninsula, South Wales</p>
-                                            <p><strong class="text-gray-900">Southwest England:</strong> Cornwall, Devon, Dorset</p>
-                                            <p><strong class="text-gray-900">Southeast England:</strong> Sussex coast (Brighton to Eastbourne)</p>
-                                            <p class="font-medium">99 beaches total. More coming regularly.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">is sewage data working for all beaches?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Honestly, no - not yet. Welsh beaches have full real-time sewage monitoring (Welsh Water integration is live and working). English beaches currently show placeholder sewage status while we integrate with the National Storm Overflow Hub API.</p>
-                                            <p>Everything else works for English beaches - tides, weather, waves, temperature, intelligent recommendations. Just the sewage piece is pending. We're working on it and will update as soon as it's ready.</p>
-                                            <p class="font-medium">We'd rather be honest about limitations than pretend we have data we don't.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what if my beach isn't listed?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a> and let us know. We prioritize based on demand - if multiple people ask for the same beach, we'll add it quickly.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Privacy & Data -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Privacy & Data</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">will you sell my data?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>No. Never. We collect the minimum needed to run the service: your email (to create your account), your saved beaches (to show your dashboard), and marketing consent preference (if you opt in).</p>
-                                            <p>That's it. We don't track your swim history, we don't sell to advertisers, we don't share with third parties. Your swim plans are your business.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">where is my data stored?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Supabase (our authentication and database provider) with servers in EU regions. Industry-standard encryption. GDPR compliant. Your password is hashed - we never see it in plain text.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I delete my account?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Yes. Contact us at hello@shorecast.co.uk and we'll delete everything immediately - email, saved beaches, all of it. Or we can add a self-service delete option in your profile settings if there's demand.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Support & Community -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Support & Community</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">who built this?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">A husband and wife team in South Wales who swim year-round - dawn dips, evening swims, winter cold therapy, summer distance swimming. We got tired of checking five different apps every morning, so we built one place that gives us an answer in 30 seconds. If it helps you get in the water more often, we've done our job.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">how can I support shorecast?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>Buy us a coffee on Ko-fi: <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">ko-fi.com/shorecast</a></p>
-                                            <p>Every donation helps keep the servers running. We're on free tiers right now which is amazing but has limits. If Shorecast grows, we'll need to upgrade to paid plans - your support makes that possible.</p>
-                                            <p>You can also spread the word - tell your swim group, share on social media, recommend to other swimmers.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I share feedback or report a problem?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Please do. Email <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a> with bug reports, feature requests, beach requests, or general feedback. We're a small team but we read everything and respond quickly. Your feedback directly shapes what we build next.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what's the swim groups directory?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Coming soon. A searchable directory of local wild swimming communities organized by region and beach. Each listing will show where they swim, typical meet times, and how to contact them. If you run a swim group and want to be listed (free), you'll be able to register via the website.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Premium Features -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Premium Features (Coming Soon)</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">what will premium include?</h3>
-                                        <div class="text-gray-600 leading-relaxed space-y-3 text-sm">
-                                            <p>We're considering: unlimited saved beaches (vs free tier 3), extended 7-day forecasts (vs current 48 hours), temperature trend tracking (for dippers - "coldest water this week"), streak tracking (gamification for regular dippers), push notifications (sewage alerts, ideal conditions), historical data access, and priority support.</p>
-                                            <p>Pricing will be reasonable - probably £3-5/month. Free tier will always exist and will always be genuinely useful.</p>
-                                        </div>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">when will premium launch?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">When there's demand for it. Right now we're focused on making the free tier excellent. Once we have a solid user base and people are asking for more features, we'll introduce premium. No pressure, no upselling. The core "tell me when to swim" functionality will always be free.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Technical & Future -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-6 pb-2 border-b-2 border-gray-100">Technical & Future</h2>
-                                
-                                <div class="space-y-6">
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why is the alexa skill not working?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">It's in development mode right now - only works for the most popular ~10 beach names. We're building a custom voice slot with all 99 beach names so you can ask about any location. Once that's done, we'll submit for Amazon certification and make it public. For now, use the web dashboard at shorecast.co.uk - it's faster and more visual anyway.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">will there be ios and android apps?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Probably eventually, but not immediately. The web app works beautifully on mobile right now - bookmark it to your home screen and it feels like a native app. We'll build native apps if there's clear demand for features that need them (push notifications, offline access, widgets, better camera integration). Right now, web-first lets us iterate fast and serve everyone equally.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">can I use shorecast for surfing?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Not yet. Surfing mode is planned (wave period, swell direction, wind offshore/onshore, surf quality scoring) but swimming and dipping are our focus first. The surfing market is bigger and well-served by existing apps (Magic Seaweed, Surfline). We'll get there eventually.</p>
-                                    </div>
-
-                                    <div>
-                                        <h3 class="text-base font-medium text-gray-900 mb-2">why is it free?</h3>
-                                        <p class="text-gray-600 leading-relaxed text-sm">Because the problem it solves is universal. Every wild swimmer checks multiple apps every morning. Making this free means more people use it, which means more feedback, which means better recommendations. Eventually we'll introduce premium features for power users, but the core "tell me when to swim" will always be free. Access to safe swimming information shouldn't have a paywall.</p>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- Still Have Questions -->
-                            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-8 text-center">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4">still have questions?</h2>
-                                <div class="space-y-3">
-                                    <p class="text-gray-600 text-sm">
-                                        <strong>Email us:</strong> 
-                                        <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a>
-                                    </p>
-                                    <p class="text-gray-600 text-sm">
-                                        <strong>Support the project:</strong> 
-                                        <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">ko-fi.com/shorecast</a>
-                                    </p>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-6 italic">We're a tiny team shipping updates constantly. If something here is out of date, please tell us - we'll fix it immediately.</p>
-                            </div>
-
                         </div>
                     </div>
                     ${renderSidebar()}
@@ -1880,80 +1540,35 @@
                                         ${state.userBeaches.map((slug, i) => {
                                             const beach = state.availableBeaches.find(b => b.slug === slug);
                                             return beach ? `
-                                                <div class="px-4 py-3 bg-gray-50 rounded-xl flex items-center justify-between">
+                                                <div class="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
                                                     <div>
                                                         <div class="font-medium text-gray-900">${beach.name}</div>
                                                         <div class="text-sm text-gray-500">${beach.location}</div>
                                                     </div>
-                                                    <span class="text-gray-400">#${i + 1}</span>
+                                                    <span class="text-xs text-gray-400">#${i + 1}</span>
                                                 </div>
                                             ` : '';
                                         }).join('')}
                                     </div>
-                                    <button onclick="startEditingBeaches()" 
-                                        class="px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-all">
-                                        manage beaches
+                                    <button onclick="setState({ selectedBeaches: [...state.userBeaches] }); loadAvailableBeaches(); setState({ view: 'onboarding' })"
+                                        class="text-sm text-indigo-600 hover:text-indigo-700">
+                                        change beaches
                                     </button>
                                 </div>
                                 
-                                <div class="pt-6 border-t border-gray-200">
-                                    <p class="text-sm text-gray-500 mb-4">account tier</p>
-                                    <div class="px-4 py-3 bg-gray-50 rounded-xl">
-                                        <span class="text-gray-900 font-medium">Free</span>
-                                        <span class="text-gray-500"> • ${state.userBeaches.length}/${MAX_FREE_BEACHES} beaches</span>
+                                <div>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">account tier</label>
+                                    <div class="flex items-center justify-between p-4 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl">
+                                        <div>
+                                            <div class="font-medium text-gray-900">Free</div>
+                                            <div class="text-sm text-gray-500">${MAX_FREE_BEACHES} beaches</div>
+                                        </div>
+                                        <button onclick="navigateTo('premium')" 
+                                            class="px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-all">
+                                            upgrade to premium
+                                        </button>
                                     </div>
-                                    <button onclick="navigateTo('premium')" 
-                                        class="mt-4 px-4 py-2 text-sm text-indigo-600 hover:text-indigo-700 border border-indigo-200 rounded-xl hover:bg-indigo-50 transition-all">
-                                        upgrade to premium
-                                    </button>
                                 </div>
-                            </div>
-                        </div>
-                    </div>
-                    ${renderSidebar()}
-                </div>
-            `;
-        }
-
-        function renderAllBeaches() {
-            const filtered = getFilteredBeaches();
-            
-            return `
-                <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-4xl mx-auto">
-                        <div class="mb-6">
-                            <button onclick="navigateTo('dashboard')" 
-                                class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
-                                ← back to dashboard
-                            </button>
-                            <button onclick="toggleSidebar()" 
-                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
-                                <div class="w-5 flex flex-col gap-1">
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                </div>
-                            </button>
-                        </div>
-                        
-                        <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-2">all beaches</h1>
-                            <p class="text-gray-500 mb-6">99 locations across Wales and Southwest England</p>
-                            
-                            <input type="text" 
-                                id="all-beaches-search"
-                                oninput="updateAllBeachesSearch(this.value)"
-                                placeholder="search beaches..."
-                                class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all mb-6">
-                            
-                            <div id="all-beaches-list" class="grid md:grid-cols-2 gap-3 max-h-96 overflow-y-auto">
-                                ${filtered.map(beach => `
-                                    <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
-                                        <div class="font-medium text-gray-900">${beach.name}</div>
-                                        <div class="text-sm text-gray-500">${beach.location}</div>
-                                        <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
-                                    </div>
-                                `).join('')}
                             </div>
                         </div>
                     </div>
@@ -1965,7 +1580,7 @@
         function renderContact() {
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-2xl mx-auto">
+                    <div class="max-w-3xl mx-auto">
                         <div class="mb-6">
                             <button onclick="navigateTo('dashboard')" 
                                 class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
@@ -1982,10 +1597,10 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-6">get in touch</h1>
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">contact us</h1>
                             
                             <p class="text-gray-600 mb-8">
-                                We love hearing from swimmers. Whether you've found a bug, want to suggest a beach, or just want to say hello.
+                                We'd love to hear from you. Whether you've found a bug, want to suggest a beach, or just want to say hello.
                             </p>
                             
                             <div class="space-y-6">
@@ -2033,48 +1648,34 @@
                             </button>
                         </div>
                         
-                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
-                            <div class="inline-block p-4 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl mb-6">
-                                <span class="text-4xl">⭐</span>
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">premium</h1>
+                            
+                            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 mb-8">
+                                <p class="text-lg text-gray-700 mb-4">🚧 Premium is coming soon!</p>
+                                <p class="text-gray-600">
+                                    We're working on unlimited beaches, 7-day forecasts, push notifications, and more. 
+                                    For now, enjoy the free tier and help us shape what premium should include.
+                                </p>
                             </div>
                             
-                            <h1 class="text-4xl font-light text-gray-900 mb-4">shorecast premium</h1>
-                            <p class="text-gray-500 mb-8">coming soon</p>
+                            <h2 class="text-xl font-medium text-gray-900 mb-4">planned features</h2>
+                            <ul class="space-y-3 text-gray-600">
+                                <li class="flex items-center gap-2">✓ Unlimited saved beaches</li>
+                                <li class="flex items-center gap-2">✓ 7-day forecasts</li>
+                                <li class="flex items-center gap-2">✓ Push notifications for sewage alerts</li>
+                                <li class="flex items-center gap-2">✓ Temperature trends (for dippers)</li>
+                                <li class="flex items-center gap-2">✓ Historical data</li>
+                                <li class="flex items-center gap-2">✓ Ad-free experience</li>
+                            </ul>
                             
-                            <div class="max-w-md mx-auto text-left space-y-4 mb-8">
-                                <div class="flex items-start gap-3">
-                                    <span class="text-emerald-500 mt-1">✓</span>
-                                    <div>
-                                        <div class="font-medium text-gray-900">unlimited beaches</div>
-                                        <div class="text-sm text-gray-500">track all your favorite spots</div>
-                                    </div>
-                                </div>
-                                <div class="flex items-start gap-3">
-                                    <span class="text-emerald-500 mt-1">✓</span>
-                                    <div>
-                                        <div class="font-medium text-gray-900">7-day forecasts</div>
-                                        <div class="text-sm text-gray-500">plan your week ahead</div>
-                                    </div>
-                                </div>
-                                <div class="flex items-start gap-3">
-                                    <span class="text-emerald-500 mt-1">✓</span>
-                                    <div>
-                                        <div class="font-medium text-gray-900">push notifications</div>
-                                        <div class="text-sm text-gray-500">sewage alerts for your beaches</div>
-                                    </div>
-                                </div>
-                                <div class="flex items-start gap-3">
-                                    <span class="text-emerald-500 mt-1">✓</span>
-                                    <div>
-                                        <div class="font-medium text-gray-900">temperature trends</div>
-                                        <div class="text-sm text-gray-500">track coldest days for dipping</div>
-                                    </div>
-                                </div>
+                            <div class="mt-8 pt-8 border-t border-gray-100">
+                                <p class="text-gray-600 mb-4">Want to support us now?</p>
+                                <a href="https://ko-fi.com/shorecast" target="_blank"
+                                    class="inline-flex items-center gap-2 px-6 py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all">
+                                    ☕ Buy us a coffee
+                                </a>
                             </div>
-                            
-                            <p class="text-gray-500 text-sm">
-                                We're working on premium features. In the meantime, you can <a href="https://ko-fi.com/shorecast" target="_blank" class="text-indigo-600 hover:text-indigo-700">support us on Ko-fi</a>.
-                            </p>
                         </div>
                     </div>
                     ${renderSidebar()}
@@ -2085,140 +1686,41 @@
         function renderPrivacyPolicy() {
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-4xl mx-auto">
+                    <div class="max-w-3xl mx-auto">
                         <div class="mb-6">
                             <button onclick="navigateTo('dashboard')" 
                                 class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
                                 ← back to dashboard
                             </button>
-                            <button onclick="toggleSidebar()" 
-                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
-                                <div class="w-5 flex flex-col gap-1">
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                </div>
-                            </button>
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-3">privacy policy</h1>
-                            <p class="text-sm text-gray-500 mb-8">Last updated 12 December 2025 • Effective 1 December 2025</p>
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">privacy policy</h1>
+                            <p class="text-gray-500 mb-8">Last updated: December 2025</p>
                             
-                            <!-- The Short Version -->
-                            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-6 mb-10">
-                                <h2 class="text-lg font-medium text-gray-900 mb-3">the short version</h2>
-                                <p class="text-gray-700 text-sm leading-relaxed">We collect the minimum data needed to show you your beaches: your email, your saved beaches, and whether you want marketing emails. We don't sell it, we don't share it, we don't track your browsing. Your password is encrypted and we never see it. You can delete everything anytime.</p>
-                            </div>
-
-                            <!-- What We Collect -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">what data we collect</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">When you create an account:</strong> Email address, encrypted password, marketing consent preference, and consent timestamp.</p>
-                                    <p><strong class="text-gray-900">When you use Shorecast:</strong> Your saved beaches (up to 3 on free tier) and their display order.</p>
-                                    <p><strong class="text-gray-900">Authentication cookies:</strong> Session tokens to keep you logged in. Essential for the service to work.</p>
-                                    <p class="font-medium text-gray-700">We do NOT collect: your name, location, phone number, swimming history, browsing behavior, device information, or anything else.</p>
-                                </div>
-                            </div>
-
-                            <!-- How We Use It -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">how we use your data</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Your email:</strong> Account login, password recovery, service updates (if you opted in), and responding to your messages.</p>
-                                    <p><strong class="text-gray-900">Your beaches:</strong> To show your personalized dashboard. Nothing else.</p>
-                                    <p class="font-medium text-gray-700">We will NEVER sell your email, share it with advertisers, or use it for anything beyond running Shorecast.</p>
-                                </div>
-                            </div>
-
-                            <!-- Where It's Stored -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">where your data is stored</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Supabase (EU servers):</strong> PostgreSQL database with AES-256 encryption. Your password is hashed using bcrypt - we never see it in plain text. SOC 2 Type II certified.</p>
-                                    <p><strong class="text-gray-900">Infrastructure providers:</strong> Render.com (backend) and Vercel (frontend) may see your IP address in server logs. These logs are automatically deleted after 7 days.</p>
-                                    <p><strong class="text-gray-900">We do NOT store data on:</strong> Our own servers (we don't have any), your device (beyond browser cookies), or any advertising networks.</p>
-                                </div>
-                            </div>
-
-                            <!-- Third Party Services -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">third-party services</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Data sources (no personal data shared):</strong> UK Admiralty Tidal API, Open-Meteo, Welsh Water / Water Company APIs - we send beach coordinates to get data, but no user information.</p>
-                                    <p><strong class="text-gray-900">Infrastructure:</strong> Supabase (stores your account data), Render.com (hosts backend), Vercel (hosts frontend), Ko-fi (processes donations if you choose to support us).</p>
-                                    <p>None of these services receive your email address or personal information beyond what's necessary to function.</p>
-                                </div>
-                            </div>
-
-                            <!-- Your Rights (GDPR) -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">your rights (GDPR)</h2>
-                                <div class="space-y-3 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Access:</strong> Email hello@shorecast.co.uk to get a copy of all your data (usually within 48 hours).</p>
-                                    <p><strong class="text-gray-900">Correct:</strong> Update your beaches in the app. Email us to change your email address.</p>
-                                    <p><strong class="text-gray-900">Delete:</strong> Email us to delete your account and all data permanently (within 48 hours).</p>
-                                    <p><strong class="text-gray-900">Withdraw consent:</strong> Email us to opt out of marketing emails anytime.</p>
-                                    <p><strong class="text-gray-900">Data portability:</strong> We'll provide your data in JSON format if requested.</p>
-                                </div>
-                            </div>
-
-                            <!-- Security -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">security</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p>All connections use HTTPS/SSL encryption. Passwords are hashed using bcrypt. Database access is restricted and encrypted. We use Supabase's built-in security features.</p>
-                                    <p><strong class="text-gray-900">If there's a data breach:</strong> We'll notify you within 72 hours (GDPR requirement) and explain what happened and what we're doing about it.</p>
-                                </div>
-                            </div>
-
-                            <!-- Cookies -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">cookies</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Essential cookies only:</strong> Authentication tokens to keep you logged in.</p>
-                                    <p class="font-medium text-gray-700">We do NOT use: advertising cookies, analytics cookies, social media cookies, or third-party tracking cookies.</p>
-                                </div>
-                            </div>
-
-                            <!-- Data Retention -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">data retention</h2>
-                                <div class="space-y-3 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Active accounts:</strong> We keep your data as long as your account exists.</p>
-                                    <p><strong class="text-gray-900">Inactive accounts:</strong> If you don't log in for 2+ years, we may email you to confirm you still want your account. If you don't respond within 30 days, we'll delete it.</p>
-                                    <p><strong class="text-gray-900">Deleted accounts:</strong> Data permanently deleted within 48 hours. We don't keep backups of deleted user data.</p>
-                                    <p><strong class="text-gray-900">Server logs:</strong> Technical logs (IP addresses, access times) are automatically deleted after 7 days.</p>
-                                </div>
-                            </div>
-
-                            <!-- Children -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">children's privacy</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">Shorecast is not intended for children under 13. We don't knowingly collect data from children. If you're under 13, please don't create an account. Parents: if you believe your child has created an account, contact us and we'll remove it immediately.</p>
-                            </div>
-
-                            <!-- Changes -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">changes to this policy</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">We may update this policy as we add features or if laws change. If we make significant changes, we'll update the date at the top, email you if you opted into marketing, and show a notice on the website for 30 days. You're responsible for reviewing this policy periodically.</p>
-                            </div>
-
-                            <!-- Contact Box -->
-                            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-8 text-center">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4">questions or concerns?</h2>
-                                <div class="space-y-3">
-                                    <p class="text-gray-600 text-sm">
-                                        <strong>Email us:</strong> 
-                                        <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a>
-                                    </p>
-                                    <p class="text-gray-600 text-sm">
-                                        <strong>UK/EU data protection:</strong> 
-                                        <a href="https://ico.org.uk" target="_blank" class="text-indigo-600 hover:text-indigo-700 underline">ico.org.uk</a>
-                                    </p>
-                                </div>
-                                <p class="text-xs text-gray-500 mt-6 italic">We're a tiny team trying to build something useful. If you have questions about your privacy, just ask - we'll explain in plain English.</p>
+                            <div class="prose prose-gray max-w-none">
+                                <p class="text-gray-600 mb-6">
+                                    Shorecast is built by swimmers, for swimmers. We take your privacy seriously and collect only what we need to give you great beach conditions.
+                                </p>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">what we collect</h2>
+                                <ul class="list-disc pl-6 text-gray-600 space-y-2">
+                                    <li>Email address (to create your account)</li>
+                                    <li>Your saved beach preferences</li>
+                                    <li>Marketing consent preference</li>
+                                </ul>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">what we don't collect</h2>
+                                <ul class="list-disc pl-6 text-gray-600 space-y-2">
+                                    <li>Your location (we don't track where you are)</li>
+                                    <li>Payment information (we use Stripe for any payments)</li>
+                                    <li>Anything we don't need</li>
+                                </ul>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">contact</h2>
+                                <p class="text-gray-600">
+                                    Questions? Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a>
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -2230,146 +1732,45 @@
         function renderTermsOfService() {
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-4xl mx-auto">
+                    <div class="max-w-3xl mx-auto">
                         <div class="mb-6">
                             <button onclick="navigateTo('dashboard')" 
                                 class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
                                 ← back to dashboard
                             </button>
-                            <button onclick="toggleSidebar()" 
-                                class="float-right w-10 h-10 flex items-center justify-center rounded-xl bg-white border border-gray-200 hover:bg-gray-50">
-                                <div class="w-5 flex flex-col gap-1">
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                    <div class="h-0.5 bg-gray-600 rounded"></div>
-                                </div>
-                            </button>
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-3">terms of service</h1>
-                            <p class="text-sm text-gray-500 mb-8">Last updated 12 December 2025 • Effective 1 December 2025</p>
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">terms of service</h1>
+                            <p class="text-gray-500 mb-8">Last updated: December 2025</p>
                             
-                            <!-- The Short Version -->
-                            <div class="bg-amber-50 border border-amber-200 rounded-2xl p-6 mb-10">
-                                <h2 class="text-lg font-medium text-gray-900 mb-3">the short version</h2>
-                                <p class="text-gray-700 text-sm leading-relaxed">Shorecast provides swimming condition recommendations. Use it to help plan your swims, but don't rely on it as your only safety information. Swimming is risky - you're responsible for your own safety. Forecasts can be wrong. Sewage data can be delayed. Always check conditions in person. Be nice, don't abuse the service, and we'll get along fine.</p>
-                            </div>
-
-                            <!-- Agreement -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">agreement to terms</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p>By creating an account and using Shorecast, you agree to these Terms of Service and our Privacy Policy. If you don't agree, don't use Shorecast.</p>
-                                    <p><strong class="text-gray-900">Who can use Shorecast:</strong> You must be at least 13 years old, provide accurate information, and be a human (no bots or scraping).</p>
-                                    <p><strong class="text-gray-900">If you're under 18:</strong> You should have parental permission. Wild swimming involves risks - make sure your parents know what you're doing.</p>
-                                </div>
-                            </div>
-
-                            <!-- What Shorecast Provides -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">what shorecast provides</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Shorecast is an information service.</strong> We aggregate data from multiple sources (tides, weather, marine conditions, sewage monitoring) and provide intelligent recommendations about when to swim at UK beaches.</p>
-                                    <p><strong class="text-gray-900">We provide:</strong> Real-time and forecast conditions, traffic light recommendations, natural language advice, personalized dashboard, and mode switching (swimming vs dipping).</p>
-                                    <p><strong class="text-gray-900">We do NOT provide:</strong> Lifeguard services, emergency response, real-time weather updates while you're swimming, guarantees that conditions won't change, or professional safety advice.</p>
-                                </div>
-                            </div>
-
-                            <!-- Critical Disclaimers -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">critical disclaimers</h2>
-                                
-                                <div class="bg-red-50 border-2 border-red-300 rounded-2xl p-6 mb-6">
-                                    <h3 class="text-base font-bold text-red-900 mb-3">⚠️ SWIMMING IS DANGEROUS</h3>
-                                    <p class="text-red-800 text-sm leading-relaxed mb-3">Wild swimming and cold water dipping can result in injury or death. Risks include drowning, hypothermia, cold water shock, strong currents and waves, submerged hazards, marine life, sewage contamination, and changing weather.</p>
-                                    <p class="text-red-900 text-sm font-semibold">YOU ARE RESPONSIBLE FOR YOUR OWN SAFETY.</p>
-                                </div>
-
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Forecasts can be wrong:</strong> Weather predictions are not guarantees. Conditions can change rapidly. We use the best data available but can't guarantee accuracy.</p>
-                                    <p><strong class="text-gray-900">Sewage monitoring limitations:</strong> Data updates within ~1 hour but systems can fail. Welsh beaches: fully integrated. English beaches: integration pending. "Clear" means no discharge currently reported - not a guarantee of perfect water quality.</p>
-                                    <p><strong class="text-gray-900">Always verify in person:</strong> Check conditions yourself before entering the water. Look at the sea. Feel the wind. Make your own judgment.</p>
-                                </div>
-                            </div>
-
-                            <!-- Limitation of Liability -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">limitation of liability</h2>
-                                <div class="bg-yellow-50 border-2 border-yellow-300 rounded-2xl p-6 mb-4">
-                                    <p class="text-yellow-900 text-sm leading-relaxed font-semibold mb-3">THIS IS THE IMPORTANT BIT:</p>
-                                    <p class="text-yellow-900 text-sm leading-relaxed">Shorecast is provided "as is" without warranties. We are NOT liable for injuries or death from swimming decisions based on our data, inaccurate forecasts, service outages, third-party data errors, or any consequential damages.</p>
-                                </div>
-                                <p class="text-sm text-gray-600 leading-relaxed"><strong class="text-gray-900">Maximum liability:</strong> Limited to the amount you paid in the last 12 months. For free tier users, that's £0.</p>
-                                <p class="text-sm text-gray-600 leading-relaxed mt-3">This sounds harsh, but it's necessary: Wild swimming is dangerous. We provide helpful information, but you make the safety decisions. We can't be held responsible for the ocean.</p>
-                            </div>
-
-                            <!-- Your Responsibilities -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">your responsibilities</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">You agree to:</strong> Provide accurate information, keep your password secure, not share your account, not abuse the service, make your own safety decisions, check conditions in person, follow local regulations, and respect beach access rules.</p>
-                                    <p><strong class="text-gray-900">You agree NOT to:</strong> Create multiple accounts to bypass limits, use automation to scrape data, reverse engineer our algorithms, resell our data, use data in ways that endanger others, or violate any laws.</p>
-                                </div>
-                            </div>
-
-                            <!-- Use At Your Own Risk -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">use at your own risk</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">By using Shorecast, you acknowledge that you understand swimming is dangerous, you're responsible for assessing your own skill level, you won't rely solely on Shorecast for safety decisions, you'll check conditions in person, and you swim at your own risk.</p>
-                            </div>
-
-                            <!-- Account Termination -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">account termination</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">We can suspend or delete your account if:</strong> You violate these terms, abuse the service, harass our team or other users, or if legally required.</p>
-                                    <p><strong class="text-gray-900">You can delete your account anytime</strong> by emailing hello@shorecast.co.uk. We'll remove all your data within 48 hours.</p>
-                                </div>
-                            </div>
-
-                            <!-- Service Availability -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">service availability</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">We try to keep Shorecast running 24/7, but servers can go down, external APIs can fail, and we might take the service offline for maintenance. We don't guarantee 100% uptime. If the service is unavailable when you want to check conditions, have a backup plan.</p>
-                            </div>
-
-                            <!-- Changes -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">changes to service and terms</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">We may add features, remove features, change recommendations, add/remove beaches, change free tier limits, or introduce premium tiers. If we make significant changes that reduce what the free tier offers, we'll give 30 days notice. We may update these terms - continued use after changes means you accept them.</p>
-                            </div>
-
-                            <!-- Intellectual Property -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">intellectual property</h2>
-                                <div class="space-y-4 text-sm text-gray-600 leading-relaxed">
-                                    <p><strong class="text-gray-900">Shorecast owns:</strong> The name, logo, website design, recommendation algorithms, and natural language text generation.</p>
-                                    <p><strong class="text-gray-900">You may:</strong> Take screenshots, share links, tell people about Shorecast.</p>
-                                    <p><strong class="text-gray-900">You may NOT:</strong> Copy our algorithms, scrape our data for your own app, or recreate Shorecast under a different name.</p>
-                                </div>
-                            </div>
-
-                            <!-- Governing Law -->
-                            <div class="mb-10">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4 pb-2 border-b-2 border-gray-100">governing law</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed">These terms are governed by the laws of England and Wales. Disputes will be handled in UK courts. We'll try to resolve issues informally first - email us before lawyering up.</p>
-                            </div>
-
-                            <!-- Final Note -->
-                            <div class="bg-gray-50 rounded-2xl p-6 mb-10">
-                                <h2 class="text-lg font-medium text-gray-900 mb-3">final note</h2>
-                                <p class="text-sm text-gray-600 leading-relaxed mb-4">The legal language sounds scary, but the reality is simple: Use Shorecast to help plan your swims. Don't rely on it as your only safety check. Understand that swimming is risky. Be responsible for your own decisions. Don't abuse the service. Respect our work.</p>
-                                <p class="text-sm text-gray-700 font-medium">If you do that, we'll keep building useful features and maintaining accurate data.</p>
-                            </div>
-
-                            <!-- Contact Box -->
-                            <div class="bg-indigo-50 border border-indigo-100 rounded-2xl p-8 text-center">
-                                <h2 class="text-xl font-medium text-gray-900 mb-4">questions about these terms?</h2>
-                                <p class="text-gray-600 text-sm">
-                                    Email <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a>
+                            <div class="prose prose-gray max-w-none">
+                                <p class="text-gray-600 mb-6">
+                                    By using Shorecast, you agree to these terms. They're written in plain English because legal jargon helps no one.
                                 </p>
-                                <p class="text-xs text-gray-500 mt-4">By using Shorecast, you agree to these terms.</p>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">the service</h2>
+                                <p class="text-gray-600 mb-6">
+                                    Shorecast provides beach condition information to help you decide when to swim. We aggregate data from multiple sources and provide recommendations, but ultimately you're responsible for your own safety in the water.
+                                </p>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">your responsibilities</h2>
+                                <ul class="list-disc pl-6 text-gray-600 space-y-2">
+                                    <li>Use Shorecast as one of several tools for making swimming decisions</li>
+                                    <li>Always assess conditions yourself when you arrive at a beach</li>
+                                    <li>Swim within your abilities</li>
+                                    <li>Keep your account credentials secure</li>
+                                </ul>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">limitations</h2>
+                                <p class="text-gray-600 mb-6">
+                                    Our data comes from third parties and while we do our best to ensure accuracy, we can't guarantee it's always correct. Conditions can change rapidly. When in doubt, don't go out.
+                                </p>
+                                
+                                <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">contact</h2>
+                                <p class="text-gray-600">
+                                    Questions? Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a>
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -2381,7 +1782,7 @@
         function renderSwimGroups() {
             return `
                 <div class="min-h-screen py-12 px-4 fade-in">
-                    <div class="max-w-4xl mx-auto">
+                    <div class="max-w-3xl mx-auto">
                         <div class="mb-6">
                             <button onclick="navigateTo('dashboard')" 
                                 class="text-indigo-600 hover:text-indigo-700 text-sm mb-4">
@@ -2398,297 +1799,20 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h1 class="text-4xl font-light text-gray-900 mb-2">swim groups directory</h1>
-                            <p class="text-gray-500 mb-8">find your local swimming community</p>
+                            <h1 class="text-4xl font-light text-gray-900 mb-6">swim groups</h1>
                             
-                            <div class="mb-8 p-6 bg-indigo-50 border border-indigo-100 rounded-xl">
-                                <h3 class="text-lg font-medium text-gray-900 mb-2">run a swim group?</h3>
-                                <p class="text-gray-600 mb-4">Get your group listed here. Email us with your details:</p>
-                                <a href="mailto:hello@shorecast.co.uk?subject=Add Swim Group" 
-                                    class="inline-block px-5 py-2 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all">
-                                    register your group
-                                </a>
-                            </div>
-
-                            <!-- South Wales Groups -->
-                            <section class="mb-10">
-                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">south wales</h2>
-                                
-                                <div class="space-y-4">
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Dawnstalkers</h3>
-                                                <p class="text-sm text-gray-500">Barry Island • Dawn swimming & dipping</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-amber-100 text-amber-700 text-xs font-medium rounded-full">dawn</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Year-round dawn swimming community. Beginners welcome. Meet at the slipway.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Daily 7:00-8:00am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
-                                                Facebook: Dawnstalkers Barry
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Penarth Sea Swimmers</h3>
-                                                <p class="text-sm text-gray-500">Penarth • All abilities</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Friendly group swimming from Penarth beach. Social swims with post-swim coffee.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Weekends 9:00am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
-                                                Facebook: Penarth Sea Swimmers
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Porthcawl Cold Water Crew</h3>
-                                                <p class="text-sm text-gray-500">Rest Bay • Cold water dipping</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-medium rounded-full">dipping</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Cold therapy focused. Winter is our season. Supportive group for all experience levels.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Tu/Th/Sa 7:30am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
-                                                Instagram: @porthcawlcoldwater
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Gower Groups -->
-                            <section class="mb-10">
-                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">gower peninsula</h2>
-                                
-                                <div class="space-y-4">
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Caswell Bay Swimmers</h3>
-                                                <p class="text-sm text-gray-500">Caswell Bay • Distance swimming</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">fitness</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Training-focused distance swimmers. Regular route from Caswell to Langland. Strong swimmers only.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Sundays 9:00am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
-                                                Email: caswellswimmers@gmail.com
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Rhossili Wild Swimmers</h3>
-                                                <p class="text-sm text-gray-500">Rhossili • All levels</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-purple-100 text-purple-700 text-xs font-medium rounded-full">mixed</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Casual group swims at one of Wales' most beautiful beaches. All welcome, swim at your own pace.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Check Facebook for times
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
-                                                Facebook: Rhossili Wild Swimmers
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Pembrokeshire Groups -->
-                            <section class="mb-10">
-                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">pembrokeshire</h2>
-                                
-                                <div class="space-y-4">
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Tenby Sea Swimmers</h3>
-                                                <p class="text-sm text-gray-500">Tenby South Beach • Social swimming</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Friendly community swims. All abilities. Coffee afterwards at local cafés.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Saturdays 10:00am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
-                                                tenbyswimmers@gmail.com
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Saundersfoot Dippers</h3>
-                                                <p class="text-sm text-gray-500">Saundersfoot • Cold water therapy</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-cyan-100 text-cyan-700 text-xs font-medium rounded-full">dipping</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Cold water immersion for mental health. Quick dips, long chats. Very welcoming.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Wednesdays 8:00am
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2.003 5.884L10 9.882l7.997-3.998A2 2 0 0016 4H4a2 2 0 00-1.997 1.884z"></path><path d="M18 8.118l-8 4-8-4V14a2 2 0 002 2h12a2 2 0 002-2V8.118z"></path></svg>
-                                                Instagram: @saundersfoot.dippers
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Cornwall Groups -->
-                            <section class="mb-10">
-                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">cornwall</h2>
-                                
-                                <div class="space-y-4">
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Penzance Sea Swimmers</h3>
-                                                <p class="text-sm text-gray-500">Penzance • Year-round swimming</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">social</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Established group with regular swims. Mix of fitness and social. Beautiful coastal routes.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Multiple times weekly
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z"></path><path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z"></path></svg>
-                                                Facebook: Penzance Sea Swimmers
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Sussex Groups -->
-                            <section>
-                                <h2 class="text-2xl font-light text-gray-900 mb-4 pb-2 border-b border-gray-200">sussex</h2>
-                                
-                                <div class="space-y-4">
-                                    <div class="p-5 border border-gray-200 rounded-xl hover:border-indigo-200 hover:bg-indigo-50/30 transition-all">
-                                        <div class="flex items-start justify-between mb-3">
-                                            <div>
-                                                <h3 class="text-lg font-medium text-gray-900">Brighton Swimming Club</h3>
-                                                <p class="text-sm text-gray-500">Brighton Beach • Competitive & social</p>
-                                            </div>
-                                            <span class="px-3 py-1 bg-emerald-100 text-emerald-700 text-xs font-medium rounded-full">fitness</span>
-                                        </div>
-                                        <p class="text-gray-600 text-sm mb-3">
-                                            Historic swimming club. Coaching available. Regular races and social events.
-                                        </p>
-                                        <div class="flex flex-wrap gap-2 text-xs text-gray-500">
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clip-rule="evenodd"></path></svg>
-                                                Multiple sessions weekly
-                                            </span>
-                                            <span class="flex items-center gap-1">
-                                                <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 20 20"><path d="M10 2a6 6 0 00-6 6v3.586l-.707.707A1 1 0 004 14h12a1 1 0 00.707-1.707L16 11.586V8a6 6 0 00-6-6zM10 18a3 3 0 01-3-3h6a3 3 0 01-3 3z"></path></svg>
-                                                brightonswimmingclub.org.uk
-                                            </span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </section>
-
-                            <!-- Info Box -->
-                            <div class="mt-10 p-6 bg-gray-50 rounded-xl">
-                                <h3 class="text-lg font-medium text-gray-900 mb-3">about this directory</h3>
-                                <p class="text-gray-600 text-sm mb-4">
-                                    This directory features local swimming communities organized by region. We verify all listings before publishing.
+                            <div class="bg-gradient-to-r from-indigo-50 to-purple-50 rounded-xl p-6 mb-8">
+                                <p class="text-lg text-gray-700 mb-4">🚧 Coming soon!</p>
+                                <p class="text-gray-600">
+                                    We're building a directory of local swim groups. Want to add yours? 
+                                    Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a>
                                 </p>
-                                <p class="text-gray-600 text-sm">
-                                    <strong>Want to add your group?</strong> Email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a> with:
-                                </p>
-                                <ul class="list-disc list-inside text-gray-600 text-sm ml-4 mt-2 space-y-1">
-                                    <li>Group name and home beach</li>
-                                    <li>Typical swim times and frequency</li>
-                                    <li>Activity type (swimming, dipping, mixed, surfing)</li>
-                                    <li>Skill level (beginners welcome, intermediate, advanced)</li>
-                                    <li>Contact method (Facebook, Instagram, email, website)</li>
-                                </ul>
                             </div>
                         </div>
                     </div>
                     ${renderSidebar()}
                 </div>
             `;
-        }
-
-        // Helper function for All Beaches search
-        function updateAllBeachesSearch(value) {
-            const container = document.getElementById('all-beaches-list');
-            if (!container) return;
-            
-            const filtered = getFilteredBeaches(value);
-            container.innerHTML = filtered.map(beach => `
-                <div class="p-4 border border-gray-200 rounded-xl hover:border-indigo-300 hover:bg-indigo-50 transition-all">
-                    <div class="font-medium text-gray-900">${beach.name}</div>
-                    <div class="text-sm text-gray-500">${beach.location}</div>
-                    <div class="text-xs text-gray-400 mt-1">${beach.facing} facing • ${beach.region}</div>
-                </div>
-            `).join('');
         }
 
         // ============================================
@@ -2759,7 +1883,6 @@
         // INITIALIZATION
         // ============================================
 
-        // Listen for auth state changes
         supabase.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 setState({ user: session.user });
@@ -2775,7 +1898,6 @@
             }
         });
 
-        // Initial auth check
         checkAuth();
     </script>
 </body>
