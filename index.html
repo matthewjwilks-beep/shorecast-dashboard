@@ -88,7 +88,7 @@
             showSidebar: false,
             showSettings: false,
             
-            // Location filter state (NEW)
+            // Location filter state
             locationFilter: null
         };
 
@@ -377,13 +377,13 @@
             return colors[status] || { badge: 'bg-gray-400', border: 'border-l-gray-400', bg: 'from-gray-50 to-gray-100' };
         }
 
-        // Get unique locations for filtering (NEW)
+        // Get unique locations for filtering
         function getUniqueLocations() {
             const locations = state.availableBeaches.map(b => b.location);
             return [...new Set(locations)].sort();
         }
 
-        // Updated to support location filter (UPDATED)
+        // Updated to support location filter
         function getFilteredBeaches(searchTerm = '') {
             const search = searchTerm.toLowerCase();
             return state.availableBeaches.filter(b => {
@@ -397,14 +397,14 @@
             });
         }
 
-        // Set location filter (NEW)
+        // Set location filter
         function setLocationFilter(location) {
             const newFilter = state.locationFilter === location ? null : location;
             setState({ locationFilter: newFilter });
             updateAllBeachesDisplay();
         }
 
-        // Update all beaches display without full re-render (NEW)
+        // Update all beaches display without full re-render
         function updateAllBeachesDisplay() {
             const searchInput = document.getElementById('all-beaches-search');
             const searchValue = searchInput ? searchInput.value : '';
@@ -455,7 +455,7 @@
             }
         }
 
-        // Handle beach click in all beaches view (NEW)
+        // Handle beach click in all beaches view
         function handleBeachClick(slug) {
             const beach = state.availableBeaches.find(b => b.slug === slug);
             if (!beach) return;
@@ -1099,20 +1099,37 @@
                     </div>
                     
                     <div class="p-5">
-                        <div class="grid grid-cols-4 gap-4 mb-4">
+                        <!-- FIXED: 5-column stats grid with both high and low tides -->
+                        <div class="grid grid-cols-5 gap-3 mb-4">
                             ${state.mode === 'swimming' ? `
+                                <!-- Column 1: Water temp -->
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">water</p>
                                     <p class="text-lg font-semibold text-gray-900">${beach.seaTempDisplay || '—'}</p>
                                 </div>
+                                
+                                <!-- Column 2: Feels like -->
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">feels like</p>
+                                    <p class="text-lg font-semibold text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</p>
+                                </div>
+                                
+                                <!-- Column 3: Tides (BOTH high and low) -->
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">tides</p>
+                                    <p class="text-sm font-semibold text-gray-900">
+                                        <span class="block">H: ${beach.tide?.high || '—'}</span>
+                                        <span class="block">L: ${beach.tide?.low || '—'}</span>
+                                    </p>
+                                </div>
+                                
+                                <!-- Column 4: Waves -->
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">waves</p>
                                     <p class="text-lg font-semibold text-gray-900">${beach.waves?.heightDisplay || '—'}</p>
                                 </div>
-                                <div class="text-center">
-                                    <p class="text-xs text-gray-500 mb-1">high tide</p>
-                                    <p class="text-lg font-semibold text-gray-900">${beach.tide?.high || '—'}</p>
-                                </div>
+                                
+                                <!-- Column 5: Status -->
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">status</p>
                                     <p class="text-lg font-semibold text-gray-900">
@@ -1121,18 +1138,30 @@
                                     </p>
                                 </div>
                             ` : `
+                                <!-- Dipping mode: water, feels like, tides, air, status -->
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">water</p>
                                     <p class="text-lg font-semibold text-gray-900">${beach.seaTempDisplay || '—'}</p>
                                 </div>
+                                
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">feels like</p>
                                     <p class="text-lg font-semibold text-gray-900">${beach.weather?.feelsLikeDisplay || '—'}</p>
                                 </div>
+                                
+                                <div class="text-center">
+                                    <p class="text-xs text-gray-500 mb-1">tides</p>
+                                    <p class="text-sm font-semibold text-gray-900">
+                                        <span class="block">H: ${beach.tide?.high || '—'}</span>
+                                        <span class="block">L: ${beach.tide?.low || '—'}</span>
+                                    </p>
+                                </div>
+                                
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">air</p>
                                     <p class="text-lg font-semibold text-gray-900">${beach.weather?.airTempDisplay || '—'}</p>
                                 </div>
+                                
                                 <div class="text-center">
                                     <p class="text-xs text-gray-500 mb-1">status</p>
                                     <p class="text-lg font-semibold text-gray-900">
@@ -1309,7 +1338,7 @@
         }
 
         // ============================================
-        // RENDER FUNCTIONS - ALL BEACHES (UPDATED)
+        // RENDER FUNCTIONS - ALL BEACHES
         // ============================================
 
         function renderAllBeaches() {
@@ -1347,7 +1376,7 @@
                                 placeholder="search beaches..."
                                 class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all mb-4">
                             
-                            <!-- Location Filter Chips (NEW) -->
+                            <!-- Location Filter Chips -->
                             <div class="mb-6">
                                 <p class="text-sm text-gray-500 mb-3">filter by location:</p>
                                 <div class="flex flex-wrap gap-2">
@@ -1444,7 +1473,7 @@
                                 
                                 <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">what we cover</h2>
                                 <p class="text-gray-600 leading-relaxed mb-6">
-                                    99 beaches across Wales and Southwest England, from Anglesey to Brighton. We're adding more all the time.
+                                    171 beaches across Wales and Southwest England, from Anglesey to Sussex. We're adding more all the time.
                                 </p>
                                 
                                 <h2 class="text-xl font-medium text-gray-900 mt-8 mb-4">our data</h2>
