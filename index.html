@@ -41,7 +41,8 @@
         const SUPABASE_URL = 'https://kivqldzfitxldzymxcfu.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImtpdnFsZHpmaXR4bGR6eW14Y2Z1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU0NDAzOTcsImV4cCI6MjA4MTAxNjM5N30.TYdgeVZe7mbgeASi8npL82Ewon7b8fjN0jRi1RtZNZk';
         
-        const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        // FIXED: Renamed to supabaseClient to avoid conflict with global 'supabase' from CDN
+        const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
         
         const DEFAULT_BEACHES = ['rhossili', 'barry-island', 'tenby-south'];
         const MAX_FREE_BEACHES = 3;
@@ -120,7 +121,7 @@
 
         async function checkAuth() {
             try {
-                const { data: { session } } = await supabase.auth.getSession();
+                const { data: { session } } = await supabaseClient.auth.getSession();
                 
                 if (session?.user) {
                     setState({ user: session.user });
@@ -138,7 +139,7 @@
             setState({ authLoading: true, authError: null });
             
             try {
-                const { data, error } = await supabase.auth.signUp({
+                const { data, error } = await supabaseClient.auth.signUp({
                     email,
                     password,
                     options: {
@@ -152,7 +153,7 @@
                 
                 // Create profile
                 if (data.user) {
-                    await supabase.from('profiles').upsert({
+                    await supabaseClient.from('profiles').upsert({
                         id: data.user.id,
                         email: email,
                         marketing_consent: marketingConsent,
@@ -174,7 +175,7 @@
             setState({ authLoading: true, authError: null });
             
             try {
-                const { data, error } = await supabase.auth.signInWithPassword({
+                const { data, error } = await supabaseClient.auth.signInWithPassword({
                     email,
                     password
                 });
@@ -192,7 +193,7 @@
             setState({ authLoading: true, authError: null });
             
             try {
-                const { error } = await supabase.auth.resetPasswordForEmail(email, {
+                const { error } = await supabaseClient.auth.resetPasswordForEmail(email, {
                     redirectTo: `${window.location.origin}?reset=true`
                 });
                 
@@ -208,7 +209,7 @@
         }
 
         async function signOut() {
-            await supabase.auth.signOut();
+            await supabaseClient.auth.signOut();
             setState({ 
                 user: null, 
                 userProfile: null, 
@@ -226,7 +227,7 @@
             if (!state.user) return;
             
             try {
-                const { data: profile, error: profileError } = await supabase
+                const { data: profile, error: profileError } = await supabaseClient
                     .from('profiles')
                     .select('*')
                     .eq('id', state.user.id)
@@ -236,7 +237,7 @@
                     console.error('Profile load error:', profileError);
                 }
                 
-                const { data: beaches, error: beachesError } = await supabase
+                const { data: beaches, error: beachesError } = await supabaseClient
                     .from('user_beaches')
                     .select('beach_slug, position')
                     .eq('user_id', state.user.id)
@@ -285,7 +286,7 @@
             if (!state.user) return;
             
             try {
-                await supabase
+                await supabaseClient
                     .from('user_beaches')
                     .delete()
                     .eq('user_id', state.user.id);
@@ -296,7 +297,7 @@
                     position: index
                 }));
                 
-                const { error } = await supabase
+                const { error } = await supabaseClient
                     .from('user_beaches')
                     .insert(inserts);
                 
@@ -1912,7 +1913,7 @@
         // INITIALIZATION
         // ============================================
 
-        supabase.auth.onAuthStateChange((event, session) => {
+        supabaseClient.auth.onAuthStateChange((event, session) => {
             if (event === 'SIGNED_IN' && session) {
                 setState({ user: session.user });
                 loadUserProfile();
