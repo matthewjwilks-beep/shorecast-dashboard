@@ -688,7 +688,8 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h2 class="text-xl font-medium text-gray-900 mb-6">welcome back</h2>
+                            <h2 class="text-xl font-medium text-gray-900 mb-2">welcome back</h2>
+                            <p class="text-sm text-gray-500 mb-6">sign in to check your beach conditions</p>
                             
                             ${state.authError ? `
                                 <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
@@ -698,19 +699,21 @@
                             
                             <form onsubmit="handleLogin(event)">
                                 <div class="mb-4">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email address</label>
                                     <input type="email" id="login-email" required
+                                        placeholder="you@example.com"
                                         class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
                                 <div class="mb-6">
                                     <label class="block text-sm font-medium text-gray-700 mb-2">password</label>
                                     <input type="password" id="login-password" required
+                                        placeholder="your password"
                                         class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
                                 <button type="submit" 
-                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50 shadow-lg"
                                     ${state.authLoading ? 'disabled' : ''}>
                                     ${state.authLoading ? 'signing in...' : 'sign in'}
                                 </button>
@@ -723,12 +726,23 @@
                                 </button>
                             </div>
                             
-                            <p class="mt-6 text-center text-sm text-gray-500">
-                                don't have an account? 
-                                <button onclick="setState({ view: 'signup', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                    sign up
-                                </button>
-                            </p>
+                            <div class="mt-6 pt-6 border-t border-gray-100">
+                                <p class="text-center text-sm text-gray-500 mb-4">
+                                    don't have an account? 
+                                    <button onclick="setState({ view: 'signup', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                        sign up free
+                                    </button>
+                                </p>
+                                
+                                <div class="flex items-center justify-center gap-4 text-xs text-gray-400">
+                                    <span class="flex items-center gap-1">
+                                        🏴󠁧󠁢󠁷󠁬󠁳󠁿 made in Wales
+                                    </span>
+                                    <span class="flex items-center gap-1">
+                                        🔒 secure & private
+                                    </span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -738,65 +752,130 @@
         function renderSignup() {
             return `
                 <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
-                    <div class="w-full max-w-md">
+                    <div class="w-full max-w-2xl">
                         <div class="text-center mb-8">
                             <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
                             <p class="text-gray-500">your beaches, one glance</p>
                         </div>
                         
-                        <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h2 class="text-xl font-medium text-gray-900 mb-6">create account</h2>
-                            
-                            ${state.authError ? `
-                                <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
-                                    ${state.authError}
+                        <div class="grid md:grid-cols-2 gap-6">
+                            <!-- Left: Signup Form -->
+                            <div class="bg-white rounded-2xl shadow-lg p-8">
+                                <h2 class="text-xl font-medium text-gray-900 mb-2">create your free account</h2>
+                                <p class="text-sm text-gray-500 mb-6">join swimmers & dippers across Wales</p>
+                                
+                                ${state.authError ? `
+                                    <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
+                                        ${state.authError}
+                                    </div>
+                                ` : ''}
+                                
+                                <form onsubmit="handleSignup(event)">
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">email address</label>
+                                        <input type="email" id="signup-email" required
+                                            placeholder="you@example.com"
+                                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                                    </div>
+                                    
+                                    <div class="mb-4">
+                                        <label class="block text-sm font-medium text-gray-700 mb-2">password</label>
+                                        <input type="password" id="signup-password" required minlength="6"
+                                            placeholder="min. 6 characters"
+                                            class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                                        <p class="text-xs text-gray-400 mt-1">🔒 encrypted and secure</p>
+                                    </div>
+                                    
+                                    <div class="mb-6">
+                                        <label class="flex items-start gap-3 cursor-pointer">
+                                            <input type="checkbox" id="signup-marketing" 
+                                                class="mt-1 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
+                                            <span class="text-sm text-gray-600">
+                                                email me updates about new beaches & features (optional)
+                                            </span>
+                                        </label>
+                                    </div>
+                                    
+                                    <button type="submit" 
+                                        class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50 shadow-lg"
+                                        ${state.authLoading ? 'disabled' : ''}>
+                                        ${state.authLoading ? 'creating account...' : 'create free account'}
+                                    </button>
+                                </form>
+                                
+                                <p class="mt-4 text-xs text-gray-500 text-center leading-relaxed">
+                                    by signing up, you agree to our 
+                                    <button onclick="navigateTo('terms')" class="text-indigo-600 hover:text-indigo-700 underline">terms</button>
+                                    and 
+                                    <button onclick="navigateTo('privacy-policy')" class="text-indigo-600 hover:text-indigo-700 underline">privacy policy</button>
+                                </p>
+                                
+                                <div class="mt-6 pt-6 border-t border-gray-100">
+                                    <p class="text-center text-sm text-gray-500">
+                                        already have an account? 
+                                        <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                            sign in
+                                        </button>
+                                    </p>
                                 </div>
-                            ` : ''}
+                            </div>
                             
-                            <form onsubmit="handleSignup(event)">
-                                <div class="mb-4">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
-                                    <input type="email" id="signup-email" required
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
+                            <!-- Right: Value Proposition & Trust Signals -->
+                            <div class="space-y-6">
+                                <!-- What You Get -->
+                                <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-2xl p-6 border border-indigo-100">
+                                    <h3 class="font-medium text-gray-900 mb-4">what you get:</h3>
+                                    <ul class="space-y-3 text-sm text-gray-700">
+                                        <li class="flex items-start gap-2">
+                                            <span class="text-indigo-600 mt-0.5">✓</span>
+                                            <span><strong>track up to 3 beaches</strong> with personalized conditions</span>
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="text-indigo-600 mt-0.5">✓</span>
+                                            <span><strong>intelligent recommendations</strong> - not just raw data</span>
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="text-indigo-600 mt-0.5">✓</span>
+                                            <span><strong>real-time sewage alerts</strong> from water companies</span>
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="text-indigo-600 mt-0.5">✓</span>
+                                            <span><strong>swimming & dipping modes</strong> with tailored advice</span>
+                                        </li>
+                                        <li class="flex items-start gap-2">
+                                            <span class="text-indigo-600 mt-0.5">✓</span>
+                                            <span><strong>tide times, weather, waves</strong> - all in one place</span>
+                                        </li>
+                                    </ul>
                                 </div>
                                 
-                                <div class="mb-4">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">password</label>
-                                    <input type="password" id="signup-password" required minlength="6"
-                                        class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
-                                    <p class="text-xs text-gray-400 mt-1">at least 6 characters</p>
+                                <!-- Trust Signals -->
+                                <div class="bg-white rounded-2xl p-6 border border-gray-200">
+                                    <h3 class="font-medium text-gray-900 mb-4">why trust us:</h3>
+                                    <div class="space-y-3 text-sm text-gray-600">
+                                        <p class="flex items-start gap-2">
+                                            <span>🏴󠁧󠁢󠁷󠁬󠁳󠁿</span>
+                                            <span><strong>built in South Wales</strong> by swimmers for swimmers</span>
+                                        </p>
+                                        <p class="flex items-start gap-2">
+                                            <span>🔒</span>
+                                            <span><strong>your data is private</strong> - we never sell or share it</span>
+                                        </p>
+                                        <p class="flex items-start gap-2">
+                                            <span>🌊</span>
+                                            <span><strong>official data sources</strong> - UK Admiralty, Open-Meteo, Welsh Water</span>
+                                        </p>
+                                        <p class="flex items-start gap-2">
+                                            <span>💳</span>
+                                            <span><strong>free forever</strong> - no credit card required</span>
+                                        </p>
+                                        <p class="flex items-start gap-2">
+                                            <span>📧</span>
+                                            <span><strong>real email, real people</strong> - hello@shorecast.co.uk</span>
+                                        </p>
+                                    </div>
                                 </div>
-                                
-                                <div class="mb-6">
-                                    <label class="flex items-start gap-3 cursor-pointer">
-                                        <input type="checkbox" id="signup-marketing" 
-                                            class="mt-1 w-4 h-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500">
-                                        <span class="text-sm text-gray-600">
-                                            send me updates about new features and swimming tips (optional)
-                                        </span>
-                                    </label>
-                                </div>
-                                
-                                <button type="submit" 
-                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
-                                    ${state.authLoading ? 'disabled' : ''}>
-                                    ${state.authLoading ? 'creating account...' : 'create account'}
-                                </button>
-                            </form>
-                            
-                            <p class="mt-4 text-xs text-gray-500 text-center">
-                                by signing up, you agree to our 
-                                <button onclick="navigateTo('terms')" class="text-indigo-600 hover:text-indigo-700">terms of service</button>
-                                and 
-                                <button onclick="navigateTo('privacy-policy')" class="text-indigo-600 hover:text-indigo-700">privacy policy</button>
-                            </p>
-                            
-                            <p class="mt-6 text-center text-sm text-gray-500">
-                                already have an account? 
-                                <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                    sign in
-                                </button>
-                            </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -813,7 +892,8 @@
                         </div>
                         
                         <div class="bg-white rounded-2xl shadow-lg p-8">
-                            <h2 class="text-xl font-medium text-gray-900 mb-6">forgot password</h2>
+                            <h2 class="text-xl font-medium text-gray-900 mb-2">forgot password</h2>
+                            <p class="text-sm text-gray-500 mb-6">enter your email and we'll send you a secure reset link</p>
                             
                             ${state.authError ? `
                                 <div class="mb-4 p-3 bg-red-50 border border-red-200 rounded-xl text-red-600 text-sm">
@@ -823,24 +903,33 @@
                             
                             <form onsubmit="handleResetPassword(event)">
                                 <div class="mb-6">
-                                    <label class="block text-sm font-medium text-gray-700 mb-2">email</label>
+                                    <label class="block text-sm font-medium text-gray-700 mb-2">email address</label>
                                     <input type="email" id="reset-email" required
+                                        placeholder="you@example.com"
                                         class="w-full px-4 py-3 rounded-xl border border-gray-200 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200 outline-none transition-all">
                                 </div>
                                 
                                 <button type="submit" 
-                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50"
+                                    class="w-full py-3 bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium hover:opacity-90 transition-all disabled:opacity-50 shadow-lg"
                                     ${state.authLoading ? 'disabled' : ''}>
                                     ${state.authLoading ? 'sending...' : 'send reset link'}
                                 </button>
                             </form>
                             
-                            <p class="mt-6 text-center text-sm text-gray-500">
-                                remember your password? 
-                                <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                    sign in
-                                </button>
-                            </p>
+                            <div class="mt-6 pt-6 border-t border-gray-100">
+                                <p class="text-center text-sm text-gray-500">
+                                    remember your password? 
+                                    <button onclick="setState({ view: 'login', authError: null })" class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                        sign in
+                                    </button>
+                                </p>
+                            </div>
+                            
+                            <div class="mt-4 bg-blue-50 border border-blue-200 rounded-xl p-3 text-sm text-blue-900">
+                                <p class="text-center">
+                                    🔒 the reset link will expire in 1 hour for security
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -850,27 +939,94 @@
         function renderCheckEmail() {
             return `
                 <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
-                    <div class="w-full max-w-md">
+                    <div class="w-full max-w-2xl">
                         <div class="text-center mb-8">
                             <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
                         </div>
                         
-                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
-                            <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
-                                </svg>
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <div class="text-center">
+                                <div class="w-20 h-20 bg-gradient-to-br from-indigo-100 to-purple-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <svg class="w-10 h-10 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"></path>
+                                    </svg>
+                                </div>
+                                
+                                <h2 class="text-2xl font-medium text-gray-900 mb-3">check your inbox!</h2>
+                                <p class="text-gray-600 mb-8 max-w-md mx-auto">
+                                    we've sent a confirmation email to verify your account. click the link inside to get started.
+                                </p>
                             </div>
                             
-                            <h2 class="text-xl font-medium text-gray-900 mb-4">check your email</h2>
-                            <p class="text-gray-600 mb-6">
-                                we've sent you a confirmation link. click it to complete your signup.
-                            </p>
+                            <!-- What to Expect -->
+                            <div class="bg-gradient-to-br from-indigo-50 to-purple-50 rounded-xl p-6 mb-6 border border-indigo-100">
+                                <h3 class="font-medium text-gray-900 mb-4 text-center">what to expect:</h3>
+                                <div class="space-y-3 text-sm text-gray-700">
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                                        <div>
+                                            <p class="font-medium">email from Supabase</p>
+                                            <p class="text-gray-600">sent on behalf of Shorecast - this is our secure authentication partner</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                                        <div>
+                                            <p class="font-medium">subject line: "Confirm Your Signup"</p>
+                                            <p class="text-gray-600">the email will have a button to confirm your email address</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-indigo-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                                        <div>
+                                            <p class="font-medium">click to verify</p>
+                                            <p class="text-gray-600">you'll be redirected back to shorecast.co.uk automatically</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             
-                            <button onclick="setState({ view: 'login' })" 
-                                class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                back to sign in
-                            </button>
+                            <!-- Troubleshooting -->
+                            <div class="bg-gray-50 rounded-xl p-6 mb-6">
+                                <h3 class="font-medium text-gray-900 mb-3">didn't receive it?</h3>
+                                <ul class="space-y-2 text-sm text-gray-600">
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-indigo-600">•</span>
+                                        <span>check your <strong>spam/junk folder</strong> (email comes from Supabase)</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-indigo-600">•</span>
+                                        <span>make sure you entered the correct email address</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-indigo-600">•</span>
+                                        <span>wait a few minutes - it can take up to 5 minutes to arrive</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-indigo-600">•</span>
+                                        <span>still nothing? email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a></span>
+                                    </li>
+                                </ul>
+                            </div>
+                            
+                            <!-- Security Note -->
+                            <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                                <p class="text-sm text-green-900 text-center">
+                                    🔒 <strong>security note:</strong> Shorecast will <strong>never</strong> ask for your password via email. 
+                                    only click links that redirect to <strong>shorecast.co.uk</strong>
+                                </p>
+                            </div>
+                            
+                            <div class="text-center space-y-3">
+                                <button onclick="setState({ view: 'login' })" 
+                                    class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                    ← back to sign in
+                                </button>
+                                
+                                <p class="text-xs text-gray-400">
+                                    made with ❤️ in South Wales | <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a>
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -880,27 +1036,101 @@
         function renderResetSent() {
             return `
                 <div class="min-h-screen flex items-center justify-center py-12 px-4 fade-in">
-                    <div class="w-full max-w-md">
+                    <div class="w-full max-w-2xl">
                         <div class="text-center mb-8">
                             <h1 class="text-4xl font-light text-gray-900 mb-2">shorecast</h1>
                         </div>
                         
-                        <div class="bg-white rounded-2xl shadow-lg p-8 text-center">
-                            <div class="w-16 h-16 bg-indigo-100 rounded-full flex items-center justify-center mx-auto mb-6">
-                                <svg class="w-8 h-8 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                                </svg>
+                        <div class="bg-white rounded-2xl shadow-lg p-8">
+                            <div class="text-center">
+                                <div class="w-20 h-20 bg-gradient-to-br from-green-100 to-teal-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                                    <svg class="w-10 h-10 text-green-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                                    </svg>
+                                </div>
+                                
+                                <h2 class="text-2xl font-medium text-gray-900 mb-3">reset link sent!</h2>
+                                <p class="text-gray-600 mb-8 max-w-md mx-auto">
+                                    check your email for a secure password reset link.
+                                </p>
                             </div>
                             
-                            <h2 class="text-xl font-medium text-gray-900 mb-4">reset link sent</h2>
-                            <p class="text-gray-600 mb-6">
-                                check your email for a link to reset your password.
-                            </p>
+                            <!-- What to Expect -->
+                            <div class="bg-gradient-to-br from-green-50 to-teal-50 rounded-xl p-6 mb-6 border border-green-100">
+                                <h3 class="font-medium text-gray-900 mb-4 text-center">what to expect:</h3>
+                                <div class="space-y-3 text-sm text-gray-700">
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+                                        <div>
+                                            <p class="font-medium">email from Supabase</p>
+                                            <p class="text-gray-600">sent on behalf of Shorecast - our secure authentication partner</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+                                        <div>
+                                            <p class="font-medium">subject line: "Reset Your Password"</p>
+                                            <p class="text-gray-600">the email contains a secure link to reset your password</p>
+                                        </div>
+                                    </div>
+                                    <div class="flex items-start gap-3">
+                                        <span class="flex-shrink-0 w-6 h-6 bg-green-600 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+                                        <div>
+                                            <p class="font-medium">set new password</p>
+                                            <p class="text-gray-600">you'll be taken to a secure page to create your new password</p>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             
-                            <button onclick="setState({ view: 'login' })" 
-                                class="text-indigo-600 hover:text-indigo-700 font-medium">
-                                back to sign in
-                            </button>
+                            <!-- Important Notice -->
+                            <div class="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6">
+                                <p class="text-sm text-amber-900 text-center">
+                                    ⏱️ <strong>link expires in 1 hour</strong> - use it soon to reset your password
+                                </p>
+                            </div>
+                            
+                            <!-- Troubleshooting -->
+                            <div class="bg-gray-50 rounded-xl p-6 mb-6">
+                                <h3 class="font-medium text-gray-900 mb-3">didn't receive it?</h3>
+                                <ul class="space-y-2 text-sm text-gray-600">
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-green-600">•</span>
+                                        <span>check your <strong>spam/junk folder</strong> (email comes from Supabase)</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-green-600">•</span>
+                                        <span>wait a few minutes - it can take up to 5 minutes to arrive</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-green-600">•</span>
+                                        <span>try requesting a new link if it's been more than 10 minutes</span>
+                                    </li>
+                                    <li class="flex items-start gap-2">
+                                        <span class="text-green-600">•</span>
+                                        <span>need help? email us at <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700 underline">hello@shorecast.co.uk</a></span>
+                                    </li>
+                                </ul>
+                            </div>
+                            
+                            <!-- Security Note -->
+                            <div class="bg-green-50 border border-green-200 rounded-xl p-4 mb-6">
+                                <p class="text-sm text-green-900 text-center">
+                                    🔒 <strong>security note:</strong> if you didn't request this reset, you can safely ignore the email. 
+                                    your password won't change unless you click the link.
+                                </p>
+                            </div>
+                            
+                            <div class="text-center space-y-3">
+                                <button onclick="setState({ view: 'login' })" 
+                                    class="text-indigo-600 hover:text-indigo-700 font-medium">
+                                    ← back to sign in
+                                </button>
+                                
+                                <p class="text-xs text-gray-400">
+                                    made with ❤️ in South Wales | <a href="mailto:hello@shorecast.co.uk" class="text-indigo-600 hover:text-indigo-700">hello@shorecast.co.uk</a>
+                                </p>
+                            </div>
                         </div>
                     </div>
                 </div>
