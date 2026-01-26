@@ -1142,6 +1142,12 @@
         // ============================================
 
         function renderOnboarding() {
+            // Redirect to login if not authenticated
+            if (!state.user) {
+                setState({ view: 'login' });
+                return renderLogin();
+            }
+            
             const filtered = getFilteredBeaches();
             const isEditing = state.userBeaches.length > 0;
             
